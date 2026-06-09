@@ -166,6 +166,22 @@ ret
 `out` does not stop execution. Use `ret` if the program should end immediately
 after writing a color.
 
-`tex` samples one of the four image channels loaded by `--channel0` through
-`--channel3`. Coordinates are normalized `0..1`, clamped, nearest-neighbor, and
-returned as normalized float channels in the four destination registers.
+`tex` samples one of the four channels loaded by `--channel0` through
+`--channel3` or produced by `--buffer0` through `--buffer3`. Coordinates are
+normalized `0..1`, clamped, nearest-neighbor, and returned as normalized float
+channels in the four destination registers.
+
+## Feedback Buffers
+
+Buffer passes are extra per-frame programs that render into channels before the
+main image program runs:
+
+```sh
+./build/asm-shader-toy examples/buffers/life_display.asm \
+  --buffer0 examples/buffers/life_buffer.asm
+```
+
+Buffer N writes channel N. During buffer rendering, channels contain the
+previous frame's buffer contents, so a buffer can sample itself with `tex ..., N,
+u, v` to build feedback effects like cellular automata. The image pass sees the
+newly rendered buffer channels for the current frame.

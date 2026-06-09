@@ -60,7 +60,7 @@ Rgba sample_channel(const ChannelSet* channels, int channel_index, float u, floa
     const int y =
         std::clamp(static_cast<int>(std::floor(clamped_v * static_cast<float>(channel.height))), 0,
                    channel.height - 1);
-    return unpack_rgba(channel.pixels[static_cast<std::size_t>(y * channel.width + x)]);
+    return unpack_rgba(channel.pixel_data()[static_cast<std::size_t>(y * channel.width + x)]);
 }
 
 float byte_to_unorm(std::uint8_t value) {
@@ -200,8 +200,8 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
                          pack_byte(value(3))};
             break;
         case Op::Tex: {
-            const Rgba sample = sample_channel(channels, static_cast<int>(value(4)), value(5),
-                                               value(6));
+            const Rgba sample =
+                sample_channel(channels, static_cast<int>(value(4)), value(5), value(6));
             dst(0) = byte_to_unorm(sample.r);
             dst(1) = byte_to_unorm(sample.g);
             dst(2) = byte_to_unorm(sample.b);

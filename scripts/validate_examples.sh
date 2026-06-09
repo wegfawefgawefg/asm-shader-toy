@@ -10,6 +10,9 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/time_pulse.asm --dry-run
 ./build/asm-shader-toy examples/input/mouse_rings.asm --dry-run
+./build/asm-shader-toy examples/buffers/life_display.asm \
+    --buffer0 examples/buffers/life_buffer.asm \
+    --dry-run
 ./build/asm-shader-toy examples/multifile/main.asm --dry-run
 ./build/asm-shader-toy examples/perf/heavy.asm --dry-run
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm --dry-run
@@ -23,6 +26,10 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/time_pulse.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/input/mouse_rings.asm --no-graphics --frames 2
+./build/asm-shader-toy examples/buffers/life_display.asm \
+    --buffer0 examples/buffers/life_buffer.asm \
+    --no-graphics \
+    --frames 4
 ./build/asm-shader-toy examples/multifile/main.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/perf/heavy.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm --no-graphics --frames 2

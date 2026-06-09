@@ -12,6 +12,10 @@ Run from the repository root after building:
 ./build/asm-shader-toy examples/textures/multi_image_mix.asm \
   --channel0 examples/assets/checker.png \
   --channel1 examples/assets/bars.png
+./build/asm-shader-toy examples/buffers/life_display.asm \
+  --buffer0 examples/buffers/life_buffer.asm \
+  --size gba \
+  --scale 4
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.
@@ -26,6 +30,7 @@ Folders:
 - `basics/`: time and simple procedural color.
 - `input/`: mouse-driven examples.
 - `textures/`: static image channel examples.
+- `buffers/`: feedback-buffer examples.
 - `multifile/`: local include project examples.
 - `perf/`: intentionally heavy benchmark shaders.
 - `raymarch/`: sphere/planet-style visuals.
@@ -61,8 +66,8 @@ contains the include:
 scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 `tex1_r`, and `tmp0`.
 
-The current runner supports static image channels. Webcam, video, audio, and
-Shadertoy-style buffer passes are planned but not implemented yet.
+The current runner supports static image channels and four feedback buffer
+passes. Webcam, video, and audio channels are planned but not implemented yet.
 See `examples/video/README.md` for the included MP4 fixture and future command
 shape.
 

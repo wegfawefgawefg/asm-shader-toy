@@ -5,10 +5,10 @@
 #include <SDL_image.h>
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cctype>
-#include <cstdio>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -35,6 +35,7 @@ struct Args {
     int measure_fps_frames = 0;
     std::string save_frame_path;
     std::array<std::string, 4> channel_paths;
+    std::array<std::string, 4> buffer_paths;
 };
 
 std::string lower_ascii(std::string_view text) {
@@ -214,6 +215,15 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int buffer = static_cast<int>(arg.back() - '0');
+            args.buffer_paths[static_cast<std::size_t>(buffer)] = std::string{*value};
+            continue;
+        }
         if (!arg.empty() && arg.front() == '-') {
             return std::nullopt;
         }
@@ -224,16 +234,18 @@ std::optional<Args> parse_args(int argc, char** argv) {
 }
 
 void print_usage() {
-    std::cerr << "usage: asm-shader-toy [program.asm] [--size 240x160|gba|gb|n64|ps1|psp] [--scale N]\n"
-              << "       --dimscale is accepted as an alias for --scale\n"
-              << "       --size presets: gb, gbc, gba, nes, snes, genesis, sms, n64, ps1, ds, psp\n"
-              << "       --channel0 path through --channel3 path load image inputs\n"
-              << "       --dry-run assembles and validates image inputs without rendering\n"
-              << "       --no-graphics --frames N renders N CPU frames without a window\n"
-              << "       --save-frame path.png renders one headless frame to a PNG\n"
-              << "       --fps shows a small FPS overlay in graphical runs\n"
-              << "       --measure-fps N renders N CPU frames and prints average FPS\n"
-              << "       graphical runs hot reload the program and its includes on save\n";
+    std::cerr
+        << "usage: asm-shader-toy [program.asm] [--size 240x160|gba|gb|n64|ps1|psp] [--scale N]\n"
+        << "       --dimscale is accepted as an alias for --scale\n"
+        << "       --size presets: gb, gbc, gba, nes, snes, genesis, sms, n64, ps1, ds, psp\n"
+        << "       --channel0 path through --channel3 path load image inputs\n"
+        << "       --buffer0 path through --buffer3 path run feedback buffer passes into channels\n"
+        << "       --dry-run assembles and validates image inputs without rendering\n"
+        << "       --no-graphics --frames N renders N CPU frames without a window\n"
+        << "       --save-frame path.png renders one headless frame to a PNG\n"
+        << "       --fps shows a small FPS overlay in graphical runs\n"
+        << "       --measure-fps N renders N CPU frames and prints average FPS\n"
+        << "       graphical runs hot reload the program and its includes on save\n";
 }
 
 bool has_channel_paths(const Args& args) {
@@ -243,6 +255,24 @@ bool has_channel_paths(const Args& args) {
         }
     }
     return false;
+}
+
+bool has_buffer_paths(const Args& args) {
+    for (const std::string& path : args.buffer_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+ast::ImageChannel make_buffer_channel(int width, int height,
+                                      const std::vector<std::uint32_t>& pixels) {
+    ast::ImageChannel channel;
+    channel.width = width;
+    channel.height = height;
+    channel.external_pixels = &pixels;
+    return channel;
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -346,6 +376,20 @@ FileWriteTimes snapshot_dependencies(const std::vector<std::filesystem::path>& d
     return snapshot;
 }
 
+std::vector<std::filesystem::path>
+collect_dependencies(const ast::AssembleResult& main_program,
+                     const std::array<std::optional<ast::AssembleResult>, 4>& buffers) {
+    std::vector<std::filesystem::path> dependencies = main_program.dependencies;
+    for (const auto& buffer : buffers) {
+        if (!buffer.has_value()) {
+            continue;
+        }
+        dependencies.insert(dependencies.end(), buffer->dependencies.begin(),
+                            buffer->dependencies.end());
+    }
+    return dependencies;
+}
+
 bool dependencies_changed(const FileWriteTimes& snapshot) {
     for (const auto& [path, previous_time] : snapshot) {
         if (file_write_time(path) != previous_time) {
@@ -359,6 +403,84 @@ void print_diagnostics(const std::vector<ast::Diagnostic>& diagnostics) {
     for (const ast::Diagnostic& diagnostic : diagnostics) {
         std::cerr << diagnostic.file << ":" << diagnostic.line << ": " << diagnostic.message
                   << '\n';
+    }
+}
+
+bool assemble_buffers(const Args& args,
+                      std::array<std::optional<ast::AssembleResult>, 4>& out_buffers) {
+    for (std::size_t i = 0; i < args.buffer_paths.size(); ++i) {
+        if (args.buffer_paths[i].empty()) {
+            out_buffers[i].reset();
+            continue;
+        }
+
+        ast::AssembleResult assembled = ast::assemble_file(args.buffer_paths[i]);
+        if (!assembled.ok()) {
+            print_diagnostics(assembled.diagnostics);
+            return false;
+        }
+        out_buffers[i] = std::move(assembled);
+    }
+    return true;
+}
+
+void ensure_buffer_storage(const Args& args,
+                           std::array<std::vector<std::uint32_t>, 4>& previous_buffers,
+                           std::array<std::vector<std::uint32_t>, 4>& current_buffers) {
+    const std::size_t pixel_count = static_cast<std::size_t>(args.width * args.height);
+    for (std::size_t i = 0; i < args.buffer_paths.size(); ++i) {
+        if (args.buffer_paths[i].empty()) {
+            continue;
+        }
+        previous_buffers[i].resize(pixel_count);
+        current_buffers[i].resize(pixel_count);
+    }
+}
+
+void render_pipeline(const Args& args, const ast::Program& image_program,
+                     const std::array<std::optional<ast::AssembleResult>, 4>& buffer_programs,
+                     const ast::ChannelSet& base_channels,
+                     std::array<std::vector<std::uint32_t>, 4>& previous_buffers,
+                     std::array<std::vector<std::uint32_t>, 4>& current_buffers, int frame,
+                     float time, float time_delta, std::vector<std::uint32_t>& pixels,
+                     float mouse_x = 0.0F, float mouse_y = 0.0F, float mouse_down = 0.0F,
+                     float mouse_click_x = 0.0F, float mouse_click_y = 0.0F) {
+    ast::ChannelSet previous_channels = base_channels;
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (buffer_programs[i].has_value()) {
+            previous_channels.image[i] =
+                make_buffer_channel(args.width, args.height, previous_buffers[i]);
+        }
+    }
+
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (!buffer_programs[i].has_value()) {
+            continue;
+        }
+        const ast::FrameInputs buffer_inputs =
+            make_frame_inputs(args, previous_channels, frame, time, time_delta, mouse_x, mouse_y,
+                              mouse_down, mouse_click_x, mouse_click_y);
+        ast::render_frame(buffer_programs[i]->program, buffer_inputs, current_buffers[i],
+                          ast::RunLimits{args.max_steps});
+    }
+
+    ast::ChannelSet final_channels = base_channels;
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (buffer_programs[i].has_value()) {
+            final_channels.image[i] =
+                make_buffer_channel(args.width, args.height, current_buffers[i]);
+        }
+    }
+
+    const ast::FrameInputs image_inputs =
+        make_frame_inputs(args, final_channels, frame, time, time_delta, mouse_x, mouse_y,
+                          mouse_down, mouse_click_x, mouse_click_y);
+    ast::render_frame(image_program, image_inputs, pixels, ast::RunLimits{args.max_steps});
+
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (buffer_programs[i].has_value()) {
+            std::swap(previous_buffers[i], current_buffers[i]);
+        }
     }
 }
 
@@ -467,8 +589,8 @@ void draw_debug_text(SDL_Renderer* renderer, const std::string& text, int x, int
                      SDL_Color color) {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
-    const SDL_Rect background{x - 4, y - 4,
-                              static_cast<int>(text.size()) * 4 * scale + 6, 5 * scale + 8};
+    const SDL_Rect background{x - 4, y - 4, static_cast<int>(text.size()) * 4 * scale + 6,
+                              5 * scale + 8};
     SDL_RenderFillRect(renderer, &background);
 
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
@@ -508,8 +630,12 @@ int main(int argc, char** argv) {
         print_diagnostics(assembled.diagnostics);
         return 1;
     }
+    std::array<std::optional<ast::AssembleResult>, 4> buffer_programs;
+    if (!assemble_buffers(args, buffer_programs)) {
+        return 1;
+    }
 
-    if (args.dry_run && !has_channel_paths(args)) {
+    if (args.dry_run && !has_channel_paths(args) && !has_buffer_paths(args)) {
         std::cout << "ok: assembled " << args.program_path << '\n';
         return 0;
     }
@@ -543,6 +669,9 @@ int main(int argc, char** argv) {
         if (has_channel_paths(args)) {
             std::cout << " and loaded image channels";
         }
+        if (has_buffer_paths(args)) {
+            std::cout << " and assembled buffer passes";
+        }
         std::cout << '\n';
         IMG_Quit();
         SDL_Quit();
@@ -551,14 +680,24 @@ int main(int argc, char** argv) {
 
     if (args.no_graphics) {
         std::vector<std::uint32_t> pixels;
+        std::array<std::vector<std::uint32_t>, 4> previous_buffers;
+        std::array<std::vector<std::uint32_t>, 4> current_buffers;
+        const bool use_buffers = has_buffer_paths(args);
+        ensure_buffer_storage(args, previous_buffers, current_buffers);
         const int frame_count = args.frames >= 0 ? args.frames : 1;
         const auto measure_start = std::chrono::steady_clock::now();
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
-            const ast::FrameInputs frame_inputs =
-                make_frame_inputs(args, channels, frame, time, 1.0F / 60.0F);
-            ast::render_frame(assembled.program, frame_inputs, pixels,
-                              ast::RunLimits{args.max_steps});
+            if (use_buffers) {
+                render_pipeline(args, assembled.program, buffer_programs, channels,
+                                previous_buffers, current_buffers, frame, time, 1.0F / 60.0F,
+                                pixels);
+            } else {
+                const ast::FrameInputs frame_inputs =
+                    make_frame_inputs(args, channels, frame, time, 1.0F / 60.0F);
+                ast::render_frame(assembled.program, frame_inputs, pixels,
+                                  ast::RunLimits{args.max_steps});
+            }
         }
         const auto measure_end = std::chrono::steady_clock::now();
         if (!args.save_frame_path.empty() &&
@@ -571,9 +710,8 @@ int main(int argc, char** argv) {
             const std::chrono::duration<double> elapsed = measure_end - measure_start;
             const double seconds = elapsed.count();
             const double fps = seconds > 0.0 ? static_cast<double>(frame_count) / seconds : 0.0;
-            const double ms_per_frame = seconds > 0.0
-                                            ? (seconds * 1000.0) / static_cast<double>(frame_count)
-                                            : 0.0;
+            const double ms_per_frame =
+                seconds > 0.0 ? (seconds * 1000.0) / static_cast<double>(frame_count) : 0.0;
             std::cout << "frames: " << frame_count << '\n'
                       << "seconds: " << seconds << '\n'
                       << "average_fps: " << fps << '\n'
@@ -633,10 +771,15 @@ int main(int argc, char** argv) {
 
     bool running = true;
     std::vector<std::uint32_t> pixels;
+    std::array<std::vector<std::uint32_t>, 4> previous_buffers;
+    std::array<std::vector<std::uint32_t>, 4> current_buffers;
+    const bool use_buffers = has_buffer_paths(args);
+    ensure_buffer_storage(args, previous_buffers, current_buffers);
     const auto start = std::chrono::steady_clock::now();
     auto previous_frame_time = start;
     auto previous_reload_check = start;
-    FileWriteTimes dependency_snapshot = snapshot_dependencies(assembled.dependencies);
+    FileWriteTimes dependency_snapshot =
+        snapshot_dependencies(collect_dependencies(assembled, buffer_programs));
     int frame = 0;
     float fps_accumulator = 0.0F;
     int fps_frame_count = 0;
@@ -688,21 +831,33 @@ int main(int argc, char** argv) {
             previous_reload_check = now;
             if (dependencies_changed(dependency_snapshot)) {
                 ast::AssembleResult reloaded = ast::assemble_file(args.program_path);
-                if (reloaded.ok()) {
+                std::array<std::optional<ast::AssembleResult>, 4> reloaded_buffers;
+                const bool buffers_ok = assemble_buffers(args, reloaded_buffers);
+                if (reloaded.ok() && buffers_ok) {
                     assembled = std::move(reloaded);
-                    dependency_snapshot = snapshot_dependencies(assembled.dependencies);
+                    buffer_programs = std::move(reloaded_buffers);
+                    dependency_snapshot =
+                        snapshot_dependencies(collect_dependencies(assembled, buffer_programs));
                     std::cout << "hot reloaded " << args.program_path << '\n';
                 } else {
                     print_diagnostics(reloaded.diagnostics);
-                    dependency_snapshot = snapshot_dependencies(reloaded.dependencies);
+                    dependency_snapshot =
+                        snapshot_dependencies(collect_dependencies(assembled, buffer_programs));
                 }
             }
         }
 
-        const ast::FrameInputs frame_inputs =
-            make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,
-                              mouse_y, mouse_down, mouse_click_x, mouse_click_y);
-        ast::render_frame(assembled.program, frame_inputs, pixels, ast::RunLimits{args.max_steps});
+        if (use_buffers) {
+            render_pipeline(args, assembled.program, buffer_programs, channels, previous_buffers,
+                            current_buffers, frame, elapsed.count(), delta.count(), pixels, mouse_x,
+                            mouse_y, mouse_down, mouse_click_x, mouse_click_y);
+        } else {
+            const ast::FrameInputs frame_inputs =
+                make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,
+                                  mouse_y, mouse_down, mouse_click_x, mouse_click_y);
+            ast::render_frame(assembled.program, frame_inputs, pixels,
+                              ast::RunLimits{args.max_steps});
+        }
         ++frame;
         if (args.frames >= 0 && frame >= args.frames) {
             running = false;

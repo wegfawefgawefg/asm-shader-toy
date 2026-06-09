@@ -63,9 +63,16 @@ struct ImageChannel {
     int width = 0;
     int height = 0;
     std::vector<std::uint32_t> pixels;
+    const std::vector<std::uint32_t>* external_pixels = nullptr;
 
     [[nodiscard]] bool loaded() const {
-        return width > 0 && height > 0 && !pixels.empty();
+        const std::vector<std::uint32_t>* source =
+            external_pixels != nullptr ? external_pixels : &pixels;
+        return width > 0 && height > 0 && source != nullptr && !source->empty();
+    }
+
+    [[nodiscard]] const std::vector<std::uint32_t>& pixel_data() const {
+        return external_pixels != nullptr ? *external_pixels : pixels;
     }
 };
 

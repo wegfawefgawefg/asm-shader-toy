@@ -23,6 +23,8 @@ Runnable examples live in `examples/`:
 - `stdlib/std/screen.inc`
 - `examples/basics/time_pulse.asm`
 - `examples/input/mouse_rings.asm`
+- `examples/buffers/life_display.asm`
+- `examples/buffers/life_buffer.asm`
 - `examples/multifile/main.asm`
 - `examples/textures/image_passthrough.asm`
 - `examples/textures/multi_image_mix.asm`
@@ -56,37 +58,33 @@ deliberate compatibility break or with a transition:
 
 ## Buffers
 
-Shadertoy-style buffers are not just images; they are extra passes. A reasonable
-CPU version should treat them as named render targets:
+The first buffer implementation treats buffers as extra feedback render passes:
 
 ```text
-program.asm
-buffers/
-  feedback.asm
-  blur.asm
-```
-
-Potential CLI shape:
-
-```sh
 asm-shader-toy image.asm --buffer0 feedback.asm --buffer1 blur.asm
 ```
 
-The frame order would be:
+Buffer N renders into channel N. Buffer passes see previous-frame buffer
+contents, then the final image pass sees the newly rendered buffers. This is
+enough for stateful effects such as cellular automata:
 
-1. Render buffer passes into intermediate textures.
-2. Expose those textures as channels to later passes.
-3. Render the final image pass.
+```sh
+./build/asm-shader-toy examples/buffers/life_display.asm \
+  --buffer0 examples/buffers/life_buffer.asm
+```
 
-Useful first buffer features:
+Current frame order:
 
-- fixed buffer size defaults to image size
-- previous-frame channel for feedback
-- explicit buffer-to-channel binding
+1. Expose previous-frame buffer textures as channels.
+2. Render buffer passes into intermediate textures.
+3. Expose current buffer textures as channels.
+4. Render the final image pass.
+
+Useful next buffer features:
+
+- explicit buffer-to-channel binding instead of fixed buffer N to channel N
 - per-buffer max step limits
-
-This should wait until image channels feel solid, because buffers can reuse the
-same `tex` sampling machinery.
+- current-frame dependencies between buffer passes when wanted
 
 ## Channel Instructions
 

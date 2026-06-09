@@ -55,7 +55,7 @@ frame, time_delta, wall_seconds, date_year, date_month, date_day
 Input aliases are read-only. Use `.alias name, r16` through `.alias name, r63`
 to name scratch registers.
 
-## Image Channels
+## Channels
 
 Up to four static image inputs can be loaded:
 
@@ -76,10 +76,20 @@ Current behavior:
 
 - channels `0..3`
 - PNG/JPEG and any other format supported by local SDL2_image
+- feedback buffers through `--buffer0` through `--buffer3`
 - normalized `u/v`
 - clamped edges
 - nearest-neighbor sampling
 - sampled color returns normalized `0..1` RGBA floats
+
+Buffer N renders into channel N before the image pass:
+
+```sh
+./build/asm-shader-toy image.asm --buffer0 feedback.asm
+```
+
+Buffer passes sample the previous frame's buffer contents. The image pass samples
+the current frame's freshly rendered buffer contents.
 
 ## Expansion Plan
 
@@ -99,8 +109,6 @@ Next channel support:
 
 Later channel support:
 
-- four channels matching Shadertoy's `iChannel0..3`
-- previous-frame buffer channel for feedback effects
 - video file channel
 - generated noise texture channel
 - keyboard texture channel compatible with common Shadertoy keyboard examples
