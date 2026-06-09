@@ -1,4 +1,4 @@
-.include "common/math.inc"
+.include "../common/math.inc"
 .include <std/screen.inc>
 
 norm tmp0, width, height

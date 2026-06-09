@@ -1,7 +1,7 @@
 ; Default demo for asm-shader-toy.
 ; Built-in aliases: px, py, time, width, height.
 
-.include "common/math.inc"
+.include "../common/math.inc"
 .include <std/screen.inc>
 
 mul tmp0, uv_x, tau

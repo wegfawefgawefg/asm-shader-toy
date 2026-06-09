@@ -21,11 +21,13 @@ Runnable examples live in `examples/`:
 - `examples/common/math.inc`
 - `stdlib/std/aliases.inc`
 - `stdlib/std/screen.inc`
-- `examples/time_pulse.asm`
-- `examples/mouse_rings.asm`
-- `examples/image_passthrough.asm`
-- `examples/multi_image_mix.asm`
-- `examples/planet_sphere.asm`
+- `examples/basics/time_pulse.asm`
+- `examples/input/mouse_rings.asm`
+- `examples/textures/image_passthrough.asm`
+- `examples/textures/multi_image_mix.asm`
+- `examples/raymarch/planet_sphere.asm`
+- `examples/assets/video/testsrc_160x90.mp4` exists as a future fixture; video
+  channels are not implemented yet.
 
 ## Subroutines
 

@@ -17,7 +17,7 @@
 namespace {
 
 struct Args {
-    std::string program_path = "examples/plasma.asm";
+    std::string program_path = "examples/basics/plasma.asm";
     int width = 240;
     int height = 160;
     int scale = 4;

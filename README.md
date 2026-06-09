@@ -29,7 +29,7 @@ Validate every checked-in example without opening a window:
 Or run a specific program:
 
 ```sh
-./build/asm-shader-toy examples/plasma.asm --size 240x160 --dimscale 4
+./build/asm-shader-toy examples/basics/plasma.asm --size 240x160 --dimscale 4
 ```
 
 Image inputs can be loaded into channels:
@@ -41,8 +41,8 @@ Image inputs can be loaded into channels:
 Headless validation:
 
 ```sh
-./build/asm-shader-toy examples/plasma.asm --dry-run
-./build/asm-shader-toy examples/plasma.asm --no-graphics --frames 10
+./build/asm-shader-toy examples/basics/plasma.asm --dry-run
+./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 10
 ```
 
 Multi-file programs use `.include` with paths relative to the including file:

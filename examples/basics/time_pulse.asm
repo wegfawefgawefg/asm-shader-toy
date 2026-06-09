@@ -1,4 +1,4 @@
-.include "common/math.inc"
+.include "../common/math.inc"
 .include <std/screen.inc>
 
 mul tmp0, time, 2.0
