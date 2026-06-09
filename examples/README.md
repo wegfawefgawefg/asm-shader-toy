@@ -17,7 +17,7 @@ contains the include:
 
 ```asm
 .include "common/math.inc"
-.include "std/screen.inc"
+.include <std/screen.inc>
 ```
 
 `std/screen.inc` also includes `std/aliases.inc`, which defines conventional

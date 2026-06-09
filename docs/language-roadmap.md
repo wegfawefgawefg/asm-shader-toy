@@ -19,8 +19,8 @@ multiple files without duplicate labels.
 Runnable examples live in `examples/`:
 
 - `examples/common/math.inc`
-- `examples/std/aliases.inc`
-- `examples/std/screen.inc`
+- `stdlib/std/aliases.inc`
+- `stdlib/std/screen.inc`
 - `examples/time_pulse.asm`
 - `examples/mouse_rings.asm`
 - `examples/image_passthrough.asm`

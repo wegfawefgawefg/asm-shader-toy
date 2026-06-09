@@ -55,7 +55,7 @@ User aliases may only target `r16..r63`.
 For normal programs, prefer the standard include:
 
 ```asm
-.include "std/screen.inc"
+.include <std/screen.inc>
 ```
 
 It defines conventional scratch aliases:

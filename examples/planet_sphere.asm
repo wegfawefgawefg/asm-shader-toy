@@ -1,5 +1,5 @@
 .include "common/math.inc"
-.include "std/screen.inc"
+.include <std/screen.inc>
 
 norm tmp0, width, height
 mul tmp1, pos_x, tmp0

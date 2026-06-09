@@ -1,4 +1,4 @@
-.include "std/screen.inc"
+.include <std/screen.inc>
 
 norm tmp0, mouse_x, width
 norm tmp1, mouse_y, height

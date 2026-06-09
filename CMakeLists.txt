@@ -25,6 +25,9 @@ target_include_directories(ast_core
 )
 
 target_compile_features(ast_core PUBLIC cxx_std_20)
+target_compile_definitions(ast_core PRIVATE
+    AST_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/stdlib"
+)
 
 function(ast_apply_warnings target_name)
     if(NOT AST_STRICT)

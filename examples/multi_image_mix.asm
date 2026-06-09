@@ -1,4 +1,4 @@
-.include "std/screen.inc"
+.include <std/screen.inc>
 
 tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
 tex tex1_r, tex1_g, tex1_b, tex1_a, 1, uv_x, uv_y

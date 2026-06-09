@@ -13,6 +13,10 @@
 namespace ast {
 namespace {
 
+#ifndef AST_STDLIB_DIR
+#define AST_STDLIB_DIR "stdlib"
+#endif
+
 struct RawInstruction {
     std::string op;
     std::vector<std::string> args;
@@ -158,16 +162,36 @@ void add_diag(ParseState& state, const std::string& file, int line, std::string 
 void parse_source(ParseState& state, const std::string& source, const std::string& file,
                   const std::filesystem::path& base_dir);
 
+std::optional<std::filesystem::path> resolve_include(ParseState& state, const std::string& token,
+                                                     const std::string& file, int line,
+                                                     const std::filesystem::path& base_dir) {
+    if (token.size() >= 2 && token.front() == '"' && token.back() == '"') {
+        return base_dir / token.substr(1, token.size() - 2);
+    }
+
+    if (token.size() >= 2 && token.front() == '<' && token.back() == '>') {
+        const std::filesystem::path relative = token.substr(1, token.size() - 2);
+        if (relative.is_absolute()) {
+            add_diag(state, file, line, "standard include must be relative: " + relative.string());
+            return std::nullopt;
+        }
+        return std::filesystem::path{AST_STDLIB_DIR} / relative;
+    }
+
+    add_diag(state, file, line, ".include expects a quoted path or <standard/path.inc>");
+    return std::nullopt;
+}
+
 void parse_include(ParseState& state, const std::string& token, const std::string& file, int line,
                    const std::filesystem::path& base_dir) {
-    if (token.size() < 2 || token.front() != '"' || token.back() != '"') {
-        add_diag(state, file, line, ".include expects a quoted path");
+    const std::optional<std::filesystem::path> include_path =
+        resolve_include(state, token, file, line, base_dir);
+    if (!include_path.has_value()) {
         return;
     }
 
-    const std::filesystem::path include_path = base_dir / token.substr(1, token.size() - 2);
     const std::filesystem::path canonical =
-        std::filesystem::weakly_canonical(include_path).lexically_normal();
+        std::filesystem::weakly_canonical(*include_path).lexically_normal();
     if (state.include_stack.contains(canonical)) {
         add_diag(state, file, line, "recursive include: " + canonical.string());
         return;

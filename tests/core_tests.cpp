@@ -98,6 +98,18 @@ void test_named_inputs_and_aliases() {
     require(color.g == 128, "named py/height aliases work");
 }
 
+void test_standard_include_aliases() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .include <std/screen.inc>
+        out uv_x, uv_y, pos_x, 1.0
+    )");
+
+    require(result.ok(), "standard include aliases assemble");
+    const ast::Rgba color =
+        ast::run_pixel(result.program, ast::PixelInputs{120, 80, 240, 160, 0.0F});
+    require(color.r == 128 && color.g == 128, "standard uv aliases are seeded");
+}
+
 void test_high_register_aliases_are_allowed() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         .alias hi, r63
@@ -169,6 +181,7 @@ int main() {
     test_unary_math_uses_destination_and_source();
     test_frame_inputs_seed_registers();
     test_named_inputs_and_aliases();
+    test_standard_include_aliases();
     test_high_register_aliases_are_allowed();
     test_input_aliases_are_read_only();
     test_texture_sampling();

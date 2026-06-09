@@ -1,5 +1,5 @@
 .include "common/math.inc"
-.include "std/screen.inc"
+.include <std/screen.inc>
 
 mul tmp0, time, 2.0
 add tmp0, tmp0, pos_x

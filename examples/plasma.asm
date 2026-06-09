@@ -2,7 +2,7 @@
 ; Built-in aliases: px, py, time, width, height.
 
 .include "common/math.inc"
-.include "std/screen.inc"
+.include <std/screen.inc>
 
 mul tmp0, uv_x, tau
 mul tmp1, uv_y, tau
