@@ -36,6 +36,7 @@ struct Args {
     std::string save_frame_path;
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> video_paths;
+    std::array<std::string, 4> webcam_paths;
     std::array<std::string, 4> buffer_paths;
 };
 
@@ -47,6 +48,28 @@ struct VideoChannel {
 
     [[nodiscard]] bool loaded() const {
         return width > 0 && height > 0 && !frames.empty();
+    }
+};
+
+struct WebcamChannel {
+    int width = 320;
+    int height = 240;
+    FILE* pipe = nullptr;
+    std::vector<std::uint8_t> raw_frame;
+    std::vector<std::uint32_t> pixels;
+
+    WebcamChannel() = default;
+    WebcamChannel(const WebcamChannel&) = delete;
+    WebcamChannel& operator=(const WebcamChannel&) = delete;
+
+    ~WebcamChannel() {
+        if (pipe != nullptr) {
+            pclose(pipe);
+        }
+    }
+
+    [[nodiscard]] bool loaded() const {
+        return pipe != nullptr && width > 0 && height > 0 && !pixels.empty();
     }
 };
 
@@ -236,6 +259,19 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.video_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--webcam0" || arg == "--webcam1" || arg == "--webcam2" || arg == "--webcam3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string device = "/dev/video" + std::to_string(channel);
+            if (i + 1 < argc) {
+                const std::string_view possible_device{argv[i + 1]};
+                if (possible_device.empty() || possible_device.front() != '-') {
+                    ++i;
+                    device = std::string{possible_device};
+                }
+            }
+            args.webcam_paths[static_cast<std::size_t>(channel)] = std::move(device);
+            continue;
+        }
         if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
             const auto value = next();
             if (!value.has_value()) {
@@ -261,6 +297,8 @@ void print_usage() {
         << "       --size presets: gb, gbc, gba, nes, snes, genesis, sms, n64, ps1, ds, psp\n"
         << "       --channel0 path through --channel3 path load image inputs\n"
         << "       --video0 path through --video3 path load video inputs with ffmpeg\n"
+        << "       --webcam0 [device] through --webcam3 [device] load webcam inputs with "
+           "ffmpeg/v4l2\n"
         << "       --buffer0 path through --buffer3 path run feedback buffer passes into channels\n"
         << "       --dry-run assembles and validates image inputs without rendering\n"
         << "       --no-graphics --frames N renders N CPU frames without a window\n"
@@ -290,6 +328,15 @@ bool has_buffer_paths(const Args& args) {
 
 bool has_video_paths(const Args& args) {
     for (const std::string& path : args.video_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_webcam_paths(const Args& args) {
+    for (const std::string& path : args.webcam_paths) {
         if (!path.empty()) {
             return true;
         }
@@ -456,6 +503,77 @@ void update_video_channels(ast::ChannelSet& channels,
         channels.image[i].pixels.clear();
         channels.image[i].external_pixels = &video.frames[frame_index];
     }
+}
+
+bool read_webcam_frame(WebcamChannel& webcam) {
+    if (webcam.pipe == nullptr) {
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height) * 4U;
+    webcam.raw_frame.resize(frame_bytes);
+    std::size_t offset = 0;
+    while (offset < frame_bytes) {
+        const std::size_t read =
+            std::fread(webcam.raw_frame.data() + offset, 1, frame_bytes - offset, webcam.pipe);
+        if (read == 0) {
+            return false;
+        }
+        offset += read;
+    }
+
+    webcam.pixels.resize(static_cast<std::size_t>(webcam.width) *
+                         static_cast<std::size_t>(webcam.height));
+    for (std::size_t pixel = 0; pixel < webcam.pixels.size(); ++pixel) {
+        const std::uint8_t r = webcam.raw_frame[pixel * 4U + 0U];
+        const std::uint8_t g = webcam.raw_frame[pixel * 4U + 1U];
+        const std::uint8_t b = webcam.raw_frame[pixel * 4U + 2U];
+        const std::uint8_t a = webcam.raw_frame[pixel * 4U + 3U];
+        webcam.pixels[pixel] =
+            (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+    }
+    return true;
+}
+
+bool open_webcam_channel(const std::string& device, WebcamChannel& out) {
+    out.width = 320;
+    out.height = 240;
+    const std::string command = "ffmpeg -v error -f v4l2 -framerate 30 -i " + shell_quote(device) +
+                                " -vf scale=320:240 -f rawvideo -pix_fmt rgba - 2>/dev/null";
+    out.pipe = popen(command.c_str(), "r");
+    if (out.pipe == nullptr) {
+        std::cerr << "failed to start webcam capture for " << device << '\n';
+        return false;
+    }
+
+    if (!read_webcam_frame(out)) {
+        std::cerr << "failed to read webcam frame from " << device << '\n';
+        pclose(out.pipe);
+        out.pipe = nullptr;
+        return false;
+    }
+    return true;
+}
+
+bool update_webcam_channels(ast::ChannelSet& channels,
+                            std::array<WebcamChannel, 4>& webcam_channels) {
+    for (std::size_t i = 0; i < webcam_channels.size(); ++i) {
+        WebcamChannel& webcam = webcam_channels[i];
+        if (webcam.pipe == nullptr) {
+            continue;
+        }
+        if (!read_webcam_frame(webcam)) {
+            std::cerr << "webcam stream ended on channel " << i << '\n';
+            return false;
+        }
+        channels.image[i].width = webcam.width;
+        channels.image[i].height = webcam.height;
+        channels.image[i].pixels.clear();
+        channels.image[i].external_pixels = &webcam.pixels;
+    }
+    return true;
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -819,7 +937,7 @@ int main(int argc, char** argv) {
     }
 
     if (args.dry_run && !has_channel_paths(args) && !has_video_paths(args) &&
-        !has_buffer_paths(args)) {
+        !has_webcam_paths(args) && !has_buffer_paths(args)) {
         std::cout << "ok: assembled " << args.program_path << '\n';
         return 0;
     }
@@ -859,6 +977,21 @@ int main(int argc, char** argv) {
     }
     update_video_channels(channels, video_channels, 0.0);
 
+    std::array<WebcamChannel, 4> webcam_channels;
+    for (std::size_t i = 0; i < args.webcam_paths.size(); ++i) {
+        if (!args.webcam_paths[i].empty() &&
+            !open_webcam_channel(args.webcam_paths[i], webcam_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    if (!update_webcam_channels(channels, webcam_channels)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
     if (args.dry_run) {
         std::cout << "ok: assembled " << args.program_path;
         if (has_channel_paths(args)) {
@@ -866,6 +999,9 @@ int main(int argc, char** argv) {
         }
         if (has_video_paths(args)) {
             std::cout << " and loaded video channels";
+        }
+        if (has_webcam_paths(args)) {
+            std::cout << " and opened webcam channels";
         }
         if (has_buffer_paths(args)) {
             std::cout << " and assembled buffer passes";
@@ -887,6 +1023,11 @@ int main(int argc, char** argv) {
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
             update_video_channels(channels, video_channels, static_cast<double>(time));
+            if (!update_webcam_channels(channels, webcam_channels)) {
+                IMG_Quit();
+                SDL_Quit();
+                return 1;
+            }
             if (use_buffers) {
                 render_pipeline(args, assembled.program, buffer_programs, channels,
                                 previous_buffers, current_buffers, frame, time, 1.0F / 60.0F,
@@ -1018,6 +1159,10 @@ int main(int argc, char** argv) {
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
         update_video_channels(channels, video_channels, static_cast<double>(elapsed.count()));
+        if (!update_webcam_channels(channels, webcam_channels)) {
+            running = false;
+            break;
+        }
         previous_frame_time = now;
         fps_accumulator += std::max(delta.count(), 0.0F);
         ++fps_frame_count;

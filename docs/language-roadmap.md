@@ -31,6 +31,7 @@ Runnable examples live in `examples/`:
 - `examples/raymarch/planet_sphere.asm`
 - `examples/raymarch/pixelated_planet.asm`
 - `examples/video/video_channel.asm`
+- `examples/webcam/webcam_channel.asm`
 - `examples/assets/video/testsrc_160x90.mp4`
 
 ## Subroutines

@@ -57,11 +57,12 @@ to name scratch registers.
 
 ## Channels
 
-Up to four static image or video inputs can be loaded:
+Up to four static image, video, or webcam inputs can be loaded:
 
 ```sh
 ./build/asm-shader-toy program.asm --channel0 albedo.png --channel1 mask.jpg
 ./build/asm-shader-toy program.asm --video0 clip.mp4
+./build/asm-shader-toy program.asm --webcam0
 ```
 
 Sampling is explicit:
@@ -79,6 +80,8 @@ Current behavior:
 - PNG/JPEG and any other format supported by local SDL2_image
 - video channels through `--video0` through `--video3`, decoded at startup with
   local `ffmpeg` and `ffprobe`
+- webcam channels through `--webcam0` through `--webcam3`, streamed with local
+  `ffmpeg` and Linux V4L2
 - feedback buffers through `--buffer0` through `--buffer3`
 - normalized `u/v`
 - clamped edges
@@ -99,6 +102,9 @@ the current frame's freshly rendered buffer contents.
 Video channels currently preload all decoded frames. This is simple and works
 well for short fixtures, but streaming decode is needed before using long movies
 or high-resolution clips.
+
+Webcam channels stream one `320x240` frame per app frame. `--webcam0` defaults
+to `/dev/video0`; pass a device path after the flag to override it.
 
 ## Expansion Plan
 
@@ -122,7 +128,7 @@ Later channel support:
 - generated noise texture channel
 - keyboard texture channel compatible with common Shadertoy keyboard examples
 - audio FFT/waveform channel
-- webcam or microphone only if the platform path stays boring
+- microphone only if the platform path stays boring
 
 There is a tiny generated video fixture:
 

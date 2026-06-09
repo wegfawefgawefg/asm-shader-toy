@@ -59,6 +59,15 @@ available:
   --scale 2
 ```
 
+Webcam inputs can be loaded into channels on Linux through `ffmpeg`/V4L2:
+
+```sh
+./build/asm-shader-toy examples/webcam/webcam_channel.asm \
+  --webcam0 \
+  --size 320x240 \
+  --scale 2
+```
+
 Headless validation:
 
 ```sh

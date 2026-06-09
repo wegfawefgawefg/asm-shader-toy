@@ -24,6 +24,14 @@ Run from the repository root after building:
   --video0 examples/assets/video/big_buck_bunny_4m34s_640x360.mp4 \
   --size 320x180 \
   --scale 2
+./build/asm-shader-toy examples/webcam/webcam_channel.asm \
+  --webcam0 \
+  --size 320x240 \
+  --scale 2
+./build/asm-shader-toy examples/video/poster_edges.asm \
+  --webcam0 \
+  --size 320x240 \
+  --scale 2
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.
@@ -45,6 +53,7 @@ Folders:
 - `common/`: local includes for examples.
 - `assets/`: image assets plus generated and Big Buck Bunny video fixtures.
 - `video/`: video-channel example and notes.
+- `webcam/`: webcam-channel examples.
 
 Validate without opening windows:
 
@@ -75,9 +84,10 @@ scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 `tex1_r`, and `tmp0`.
 
 The current runner supports static image channels, video channels decoded
-through local `ffmpeg`/`ffprobe`, and four feedback buffer passes. Video frames
-are currently preloaded, so use short clips until streaming decode exists.
-Webcam and audio channels are planned but not implemented yet.
+through local `ffmpeg`/`ffprobe`, webcam channels through local `ffmpeg`/V4L2,
+and four feedback buffer passes. Video frames are currently preloaded, so use
+short clips until streaming decode exists. Audio channels are planned but not
+implemented yet.
 
 `raymarch/pixelated_planet.asm` is adapted from the CC0 Godot Shaders post
 "3D Pixelated Planet", which credits the YouTube short as inspiration.
