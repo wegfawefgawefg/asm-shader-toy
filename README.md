@@ -14,6 +14,12 @@ threaded, or GPU backend exists.
 ./scripts/build.sh
 ```
 
+Validate every checked-in example without opening a window:
+
+```sh
+./scripts/validate_examples.sh
+```
+
 ## Run
 
 ```sh
@@ -30,6 +36,13 @@ Image inputs can be loaded into channels:
 
 ```sh
 ./build/asm-shader-toy my.asm --channel0 image.png --channel1 mask.jpg
+```
+
+Headless validation:
+
+```sh
+./build/asm-shader-toy examples/plasma.asm --dry-run
+./build/asm-shader-toy examples/plasma.asm --no-graphics --frames 10
 ```
 
 Multi-file programs use `.include` with paths relative to the including file:

@@ -22,6 +22,9 @@ struct Args {
     int height = 160;
     int scale = 4;
     int max_steps = 4096;
+    int frames = -1;
+    bool dry_run = false;
+    bool no_graphics = false;
     std::array<std::string, 4> channel_paths;
 };
 
@@ -90,6 +93,32 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--frames") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.frames = std::atoi(std::string{*value}.c_str());
+            if (args.frames < 0) {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (arg == "--dry-run" || arg == "--dryrun") {
+            args.dry_run = true;
+            args.no_graphics = true;
+            if (args.frames < 0) {
+                args.frames = 0;
+            }
+            continue;
+        }
+        if (arg == "--no-graphics" || arg == "--nographics") {
+            args.no_graphics = true;
+            if (args.frames < 0) {
+                args.frames = 1;
+            }
+            continue;
+        }
         if (arg == "--channel0" || arg == "--channel1" || arg == "--channel2" ||
             arg == "--channel3") {
             const auto value = next();
@@ -112,7 +141,18 @@ std::optional<Args> parse_args(int argc, char** argv) {
 void print_usage() {
     std::cerr << "usage: asm-shader-toy [program.asm] [--size 240x160] [--scale N]\n"
               << "       --dimscale is accepted as an alias for --scale\n"
-              << "       --channel0 path through --channel3 path load image inputs\n";
+              << "       --channel0 path through --channel3 path load image inputs\n"
+              << "       --dry-run assembles and validates image inputs without rendering\n"
+              << "       --no-graphics --frames N renders N CPU frames without a window\n";
+}
+
+bool has_channel_paths(const Args& args) {
+    for (const std::string& path : args.channel_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -147,6 +187,36 @@ bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
     return true;
 }
 
+ast::FrameInputs make_frame_inputs(const Args& args, const ast::ChannelSet& channels, int frame,
+                                   float time, float time_delta, float mouse_x = 0.0F,
+                                   float mouse_y = 0.0F, float mouse_down = 0.0F,
+                                   float mouse_click_x = 0.0F, float mouse_click_y = 0.0F) {
+    const std::time_t wall_time = std::time(nullptr);
+    const std::tm* local_time = std::localtime(&wall_time);
+
+    ast::FrameInputs frame_inputs;
+    frame_inputs.width = args.width;
+    frame_inputs.height = args.height;
+    frame_inputs.time = time;
+    frame_inputs.time_delta = time_delta;
+    frame_inputs.frame = frame;
+    frame_inputs.mouse_x = mouse_down != 0.0F ? mouse_x : 0.0F;
+    frame_inputs.mouse_y = mouse_down != 0.0F ? mouse_y : 0.0F;
+    frame_inputs.mouse_down = mouse_down;
+    frame_inputs.mouse_click_x = mouse_click_x;
+    frame_inputs.mouse_click_y = mouse_click_y;
+    frame_inputs.wall_clock_seconds =
+        local_time != nullptr
+            ? static_cast<float>((local_time->tm_hour * 60 + local_time->tm_min) * 60 +
+                                 local_time->tm_sec)
+            : 0.0F;
+    frame_inputs.year = local_time != nullptr ? local_time->tm_year + 1900 : 1970;
+    frame_inputs.month = local_time != nullptr ? local_time->tm_mon + 1 : 1;
+    frame_inputs.day = local_time != nullptr ? local_time->tm_mday : 1;
+    frame_inputs.channels = &channels;
+    return frame_inputs;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -166,7 +236,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
+    if (args.dry_run && !has_channel_paths(args)) {
+        std::cout << "ok: assembled " << args.program_path << '\n';
+        return 0;
+    }
+
+    const std::uint32_t sdl_init_flags =
+        args.no_graphics ? static_cast<std::uint32_t>(SDL_INIT_TIMER)
+                         : static_cast<std::uint32_t>(SDL_INIT_VIDEO | SDL_INIT_TIMER);
+    if (SDL_Init(sdl_init_flags) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;
     }
@@ -185,6 +263,37 @@ int main(int argc, char** argv) {
             SDL_Quit();
             return 1;
         }
+    }
+
+    if (args.dry_run) {
+        std::cout << "ok: assembled " << args.program_path;
+        if (has_channel_paths(args)) {
+            std::cout << " and loaded image channels";
+        }
+        std::cout << '\n';
+        IMG_Quit();
+        SDL_Quit();
+        return 0;
+    }
+
+    if (args.no_graphics) {
+        std::vector<std::uint32_t> pixels;
+        const int frame_count = args.frames >= 0 ? args.frames : 1;
+        for (int frame = 0; frame < frame_count; ++frame) {
+            const float time = static_cast<float>(frame) / 60.0F;
+            const ast::FrameInputs frame_inputs =
+                make_frame_inputs(args, channels, frame, time, 1.0F / 60.0F);
+            ast::render_frame(assembled.program, frame_inputs, pixels,
+                              ast::RunLimits{args.max_steps});
+        }
+        std::cout << "ok: rendered " << frame_count << " frame";
+        if (frame_count != 1) {
+            std::cout << "s";
+        }
+        std::cout << " without graphics\n";
+        IMG_Quit();
+        SDL_Quit();
+        return 0;
     }
 
     SDL_Window* window =
@@ -264,35 +373,14 @@ int main(int argc, char** argv) {
         const std::chrono::duration<float> delta = now - previous_frame_time;
         previous_frame_time = now;
 
-        const std::time_t wall_time = std::time(nullptr);
-        const std::tm* local_time = std::localtime(&wall_time);
-        const int year = local_time != nullptr ? local_time->tm_year + 1900 : 1970;
-        const int month = local_time != nullptr ? local_time->tm_mon + 1 : 1;
-        const int day = local_time != nullptr ? local_time->tm_mday : 1;
-        const float seconds_of_day =
-            local_time != nullptr
-                ? static_cast<float>((local_time->tm_hour * 60 + local_time->tm_min) * 60 +
-                                     local_time->tm_sec)
-                : 0.0F;
-
-        ast::FrameInputs frame_inputs;
-        frame_inputs.width = args.width;
-        frame_inputs.height = args.height;
-        frame_inputs.time = elapsed.count();
-        frame_inputs.time_delta = delta.count();
-        frame_inputs.frame = frame;
-        frame_inputs.mouse_x = mouse_down != 0.0F ? mouse_x : 0.0F;
-        frame_inputs.mouse_y = mouse_down != 0.0F ? mouse_y : 0.0F;
-        frame_inputs.mouse_down = mouse_down;
-        frame_inputs.mouse_click_x = mouse_click_x;
-        frame_inputs.mouse_click_y = mouse_click_y;
-        frame_inputs.wall_clock_seconds = seconds_of_day;
-        frame_inputs.year = year;
-        frame_inputs.month = month;
-        frame_inputs.day = day;
-        frame_inputs.channels = &channels;
+        const ast::FrameInputs frame_inputs =
+            make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,
+                              mouse_y, mouse_down, mouse_click_x, mouse_click_y);
         ast::render_frame(assembled.program, frame_inputs, pixels, ast::RunLimits{args.max_steps});
         ++frame;
+        if (args.frames >= 0 && frame >= args.frames) {
+            running = false;
+        }
 
         SDL_UpdateTexture(texture, nullptr, pixels.data(),
                           args.width * static_cast<int>(sizeof(std::uint32_t)));

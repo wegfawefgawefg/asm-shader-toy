@@ -12,6 +12,12 @@ Run from the repository root after building:
   --channel1 examples/assets/bars.png
 ```
 
+Validate without opening windows:
+
+```sh
+./scripts/validate_examples.sh
+```
+
 Multi-file projects use textual `.include` paths relative to the file that
 contains the include:
 
