@@ -3,7 +3,7 @@
 This is the numbered list of language and runtime features that still look
 worth serious consideration. The intent is to pick through these one by one.
 
-1. Include-once by default.
+1. Include-once by default. Done.
 
    Resolve every `.include` to a canonical path and include that file only once
    per assembled program. Repeated textual inclusion mostly creates duplicate
@@ -98,4 +98,3 @@ worth serious consideration. The intent is to pick through these one by one.
     Consider macros only after subroutines and local labels are in place. The
     useful version would probably be tiny: named instruction blocks or repeated
     boilerplate, not a full preprocessor.
-

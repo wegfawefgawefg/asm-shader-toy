@@ -27,6 +27,7 @@ struct RawInstruction {
 struct Alias {
     int reg = 0;
     bool writable = false;
+    bool protected_name = false;
 };
 
 struct ParseState {
@@ -36,6 +37,7 @@ struct ParseState {
     std::map<std::string, Alias> aliases;
     std::vector<Diagnostic> diagnostics;
     std::set<std::filesystem::path> include_stack;
+    std::set<std::filesystem::path> included_files;
     std::vector<std::filesystem::path> dependencies;
 };
 
@@ -135,24 +137,24 @@ std::optional<int> parse_register(std::string_view token) {
 
 void seed_builtin_aliases(ParseState& state) {
     state.aliases = {
-        {"px", Alias{0, false}},
-        {"pixel_x", Alias{0, false}},
-        {"py", Alias{1, false}},
-        {"pixel_y", Alias{1, false}},
-        {"time", Alias{2, false}},
-        {"width", Alias{3, false}},
-        {"height", Alias{4, false}},
-        {"mouse_x", Alias{5, false}},
-        {"mouse_y", Alias{6, false}},
-        {"mouse_down", Alias{7, false}},
-        {"mouse_click_x", Alias{8, false}},
-        {"mouse_click_y", Alias{9, false}},
-        {"frame", Alias{10, false}},
-        {"time_delta", Alias{11, false}},
-        {"wall_seconds", Alias{12, false}},
-        {"date_year", Alias{13, false}},
-        {"date_month", Alias{14, false}},
-        {"date_day", Alias{15, false}},
+        {"px", Alias{0, false, true}},
+        {"pixel_x", Alias{0, false, true}},
+        {"py", Alias{1, false, true}},
+        {"pixel_y", Alias{1, false, true}},
+        {"time", Alias{2, false, true}},
+        {"width", Alias{3, false, true}},
+        {"height", Alias{4, false, true}},
+        {"mouse_x", Alias{5, false, true}},
+        {"mouse_y", Alias{6, false, true}},
+        {"mouse_down", Alias{7, false, true}},
+        {"mouse_click_x", Alias{8, false, true}},
+        {"mouse_click_y", Alias{9, false, true}},
+        {"frame", Alias{10, false, true}},
+        {"time_delta", Alias{11, false, true}},
+        {"wall_seconds", Alias{12, false, true}},
+        {"date_year", Alias{13, false, true}},
+        {"date_month", Alias{14, false, true}},
+        {"date_day", Alias{15, false, true}},
     };
 }
 
@@ -161,7 +163,7 @@ void add_diag(ParseState& state, const std::string& file, int line, std::string 
 }
 
 void parse_source(ParseState& state, const std::string& source, const std::string& file,
-                  const std::filesystem::path& base_dir);
+                  const std::filesystem::path& base_dir, bool protect_new_aliases);
 
 std::optional<std::filesystem::path> resolve_include(ParseState& state, const std::string& token,
                                                      const std::string& file, int line,
@@ -197,6 +199,9 @@ void parse_include(ParseState& state, const std::string& token, const std::strin
         add_diag(state, file, line, "recursive include: " + canonical.string());
         return;
     }
+    if (state.included_files.contains(canonical)) {
+        return;
+    }
 
     state.dependencies.push_back(canonical);
     std::ifstream input(canonical);
@@ -208,12 +213,18 @@ void parse_include(ParseState& state, const std::string& token, const std::strin
     std::ostringstream buffer;
     buffer << input.rdbuf();
     state.include_stack.insert(canonical);
-    parse_source(state, buffer.str(), canonical.string(), canonical.parent_path());
+    state.included_files.insert(canonical);
+    const std::filesystem::path stdlib_root =
+        std::filesystem::weakly_canonical(std::filesystem::path{AST_STDLIB_DIR}).lexically_normal();
+    const bool protect_new_aliases =
+        std::filesystem::relative(canonical, stdlib_root).native().starts_with("..") == false;
+    parse_source(state, buffer.str(), canonical.string(), canonical.parent_path(),
+                 protect_new_aliases);
     state.include_stack.erase(canonical);
 }
 
 void parse_source(ParseState& state, const std::string& source, const std::string& file,
-                  const std::filesystem::path& base_dir) {
+                  const std::filesystem::path& base_dir, bool protect_new_aliases) {
     std::istringstream stream(source);
     std::string line;
     int line_no = 0;
@@ -270,6 +281,19 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
                 add_diag(state, file, line_no, ".alias expects name and register");
                 continue;
             }
+            const std::string alias_name = lower(tokens[1]);
+            if (const auto existing = state.aliases.find(alias_name);
+                existing != state.aliases.end()) {
+                if (existing->second.protected_name) {
+                    add_diag(state, file, line_no, "alias name is reserved: " + alias_name);
+                    continue;
+                }
+                if (protect_new_aliases) {
+                    add_diag(state, file, line_no,
+                             "alias conflicts with standard alias: " + alias_name);
+                    continue;
+                }
+            }
             const auto reg = parse_register(lower(tokens[2]));
             if (!reg.has_value()) {
                 add_diag(state, file, line_no, ".alias expects a register like r16");
@@ -279,7 +303,7 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
                 add_diag(state, file, line_no, ".alias may only name scratch registers r16..r63");
                 continue;
             }
-            state.aliases[lower(tokens[1])] = Alias{*reg, true};
+            state.aliases[alias_name] = Alias{*reg, true, protect_new_aliases};
             continue;
         }
 
@@ -471,7 +495,7 @@ Program lower_program(ParseState& state) {
 AssembleResult assemble_source(std::string source, std::string file_name) {
     ParseState state;
     seed_builtin_aliases(state);
-    parse_source(state, source, file_name, std::filesystem::current_path());
+    parse_source(state, source, file_name, std::filesystem::current_path(), false);
     AssembleResult result;
     result.program = lower_program(state);
     result.diagnostics = std::move(state.diagnostics);
@@ -491,10 +515,11 @@ AssembleResult assemble_file(const std::filesystem::path& path) {
     }
 
     state.dependencies.push_back(canonical);
+    state.included_files.insert(canonical);
     std::ostringstream buffer;
     buffer << input.rdbuf();
     state.include_stack.insert(canonical);
-    parse_source(state, buffer.str(), canonical.string(), canonical.parent_path());
+    parse_source(state, buffer.str(), canonical.string(), canonical.parent_path(), false);
 
     AssembleResult result;
     result.program = lower_program(state);

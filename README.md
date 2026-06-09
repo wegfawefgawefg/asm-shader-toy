@@ -80,7 +80,8 @@ Headless validation:
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --measure-fps 120
 ```
 
-Multi-file programs use `.include` with paths relative to the including file:
+Multi-file programs use `.include` with paths relative to the including file.
+Includes are once-by-default after canonical path resolution:
 
 ```asm
 .include "common/math.inc"

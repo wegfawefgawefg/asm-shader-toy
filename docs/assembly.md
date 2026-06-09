@@ -15,13 +15,17 @@ These comment forms are accepted:
 
 ## Includes
 
-Includes are textual and relative to the file containing the include.
+Includes are relative to the file containing the include. Standard includes use
+angle brackets and resolve under `stdlib/`.
 
 ```asm
 .include "palette.asm"
+.include <std/screen.inc>
 ```
 
-Recursive includes are rejected.
+Includes are once-by-default. The assembler resolves each include to a canonical
+path and parses it only once per program, so shared files can safely include the
+same common helper. Recursive includes are rejected.
 
 ## Constants
 
@@ -41,7 +45,8 @@ norm r16, px, width
 add r17, time, frame
 ```
 
-Input aliases are read-only. User aliases may name scratch registers:
+Input aliases are read-only and reserved. User aliases may name scratch
+registers:
 
 ```asm
 .alias u, r16
@@ -50,7 +55,8 @@ norm u, px, width
 mov color_r, u
 ```
 
-User aliases may only target `r16..r63`.
+User aliases may only target `r16..r63`. Built-in input aliases and aliases from
+standard-library includes cannot be redefined.
 
 For normal programs, prefer the standard include:
 

@@ -52,8 +52,9 @@ mouse_x, mouse_y, mouse_down, mouse_click_x, mouse_click_y,
 frame, time_delta, wall_seconds, date_year, date_month, date_day
 ```
 
-Input aliases are read-only. Use `.alias name, r16` through `.alias name, r63`
-to name scratch registers.
+Input aliases are read-only and reserved. Use `.alias name, r16` through
+`.alias name, r63` to name scratch registers. Built-in input aliases and aliases
+from standard-library includes cannot be redefined.
 
 ## Channels
 

@@ -5,16 +5,17 @@ programs pleasant.
 
 ## Multi-File
 
-Current support is textual include:
+Current support is path-based include:
 
 ```asm
 .include "palette.asm"
 .include "noise.asm"
 ```
 
-That is enough for shared constants, aliases, and helper blocks. The next useful
-step is include guards or a `.once` directive so common files can be included by
-multiple files without duplicate labels.
+Each include is once-by-default after canonical path resolution, so common files
+can be included through multiple paths without duplicate labels. Standard-library
+aliases and built-in input aliases are reserved and cannot be redefined by user
+`.alias` directives.
 
 Runnable examples live in `examples/`:
 

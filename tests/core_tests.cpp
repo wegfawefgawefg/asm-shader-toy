@@ -126,6 +126,27 @@ void test_input_aliases_are_read_only() {
     require(!result.ok(), "input aliases cannot be destinations");
 }
 
+void test_builtin_aliases_cannot_be_redefined() {
+    const ast::AssembleResult result = ast::assemble_source(".alias time, r16\n");
+    require(!result.ok(), "builtin aliases cannot be redefined");
+}
+
+void test_standard_aliases_cannot_be_redefined() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .include <std/aliases.inc>
+        .alias tmp0, r48
+    )");
+    require(!result.ok(), "standard aliases cannot be redefined");
+}
+
+void test_user_aliases_cannot_preempt_standard_aliases() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .alias tmp0, r48
+        .include <std/aliases.inc>
+    )");
+    require(!result.ok(), "user aliases cannot preempt standard aliases");
+}
+
 void test_texture_sampling() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         tex r16, r17, r18, r19, 0, 0.75, 0.25
@@ -222,6 +243,51 @@ void test_file_dependencies_include_main_and_includes() {
             "local include is tracked as dependency");
 }
 
+void test_includes_are_once_by_default() {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path include_path = dir / "once.inc";
+    const std::filesystem::path main_path = dir / "include-once.asm";
+
+    {
+        std::ofstream include_file(include_path);
+        include_file << "only_once:\n"
+                     << "out 1.0, 0.0, 0.0, 1.0\n";
+    }
+    {
+        std::ofstream main_file(main_path);
+        main_file << ".include \"once.inc\"\n"
+                  << ".include \"once.inc\"\n"
+                  << "jmp only_once\n";
+    }
+
+    const ast::AssembleResult result = ast::assemble_file(main_path);
+    require(result.ok(), "including the same file twice is allowed");
+    require(result.dependencies.size() == 2, "duplicate include is tracked only once");
+}
+
+void test_recursive_include_reports_error() {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path include_path = dir / "recursive.inc";
+    const std::filesystem::path main_path = dir / "recursive.asm";
+
+    {
+        std::ofstream include_file(include_path);
+        include_file << ".include \"recursive.inc\"\n";
+    }
+    {
+        std::ofstream main_file(main_path);
+        main_file << ".include \"recursive.inc\"\n"
+                  << "out 0.0, 0.0, 0.0, 1.0\n";
+    }
+
+    const ast::AssembleResult result = ast::assemble_file(main_path);
+    require(!result.ok(), "recursive include still reports an error");
+}
+
 void test_example_assembles() {
     if (!std::filesystem::exists("examples")) {
         return;
@@ -266,10 +332,15 @@ int main() {
     test_standard_include_aliases();
     test_high_register_aliases_are_allowed();
     test_input_aliases_are_read_only();
+    test_builtin_aliases_cannot_be_redefined();
+    test_standard_aliases_cannot_be_redefined();
+    test_user_aliases_cannot_preempt_standard_aliases();
     test_texture_sampling();
     test_texel_sampling();
     test_texel_out_of_bounds_is_black();
     test_file_dependencies_include_main_and_includes();
+    test_includes_are_once_by_default();
+    test_recursive_include_reports_error();
     test_example_assembles();
     test_diagnostics();
     return 0;

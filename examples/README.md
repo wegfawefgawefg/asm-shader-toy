@@ -70,8 +70,8 @@ Export a still frame:
   --save-frame /tmp/pixel_planet.png
 ```
 
-Multi-file projects use textual `.include` paths relative to the file that
-contains the include:
+Multi-file projects use `.include` paths relative to the file that contains the
+include. Includes are once-by-default after canonical path resolution:
 
 ```asm
 .include "palette.inc"
@@ -81,7 +81,8 @@ contains the include:
 
 `std/screen.inc` also includes `std/aliases.inc`, which defines conventional
 scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
-`tex1_r`, and `tmp0`.
+`tex1_r`, and `tmp0`. Standard aliases are reserved, so user `.alias`
+directives cannot redefine them.
 
 The current runner supports static image channels, video channels decoded
 through local `ffmpeg`/`ffprobe`, webcam channels through local `ffmpeg`/V4L2,
