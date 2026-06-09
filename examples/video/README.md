@@ -24,5 +24,14 @@ Run it with:
   --scale 4
 ```
 
+Or run the stylized poster/edge version:
+
+```sh
+./build/asm-shader-toy examples/video/poster_edges.asm \
+  --video0 examples/assets/video/big_buck_bunny_1min_160x90_24fps.mp4 \
+  --size 160x90 \
+  --scale 4
+```
+
 Video frames are currently decoded and preloaded at startup. That keeps sampling
 simple, but it is not appropriate for full movies yet.

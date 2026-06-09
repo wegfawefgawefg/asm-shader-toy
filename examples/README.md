@@ -20,6 +20,10 @@ Run from the repository root after building:
   --video0 examples/assets/video/big_buck_bunny_1min_160x90_24fps.mp4 \
   --size 160x90 \
   --scale 4
+./build/asm-shader-toy examples/video/poster_edges.asm \
+  --video0 examples/assets/video/big_buck_bunny_1min_160x90_24fps.mp4 \
+  --size 160x90 \
+  --scale 4
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.

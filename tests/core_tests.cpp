@@ -236,6 +236,7 @@ void test_example_assembles() {
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
         "examples/textures/multi_image_mix.asm",
+        "examples/video/poster_edges.asm",
         "examples/video/video_channel.asm",
         "examples/raymarch/planet_sphere.asm",
         "examples/raymarch/pixelated_planet.asm",
