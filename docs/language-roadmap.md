@@ -23,6 +23,7 @@ Runnable examples live in `examples/`:
 - `stdlib/std/screen.inc`
 - `examples/basics/time_pulse.asm`
 - `examples/input/mouse_rings.asm`
+- `examples/multifile/main.asm`
 - `examples/textures/image_passthrough.asm`
 - `examples/textures/multi_image_mix.asm`
 - `examples/raymarch/planet_sphere.asm`

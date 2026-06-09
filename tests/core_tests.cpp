@@ -159,6 +159,7 @@ void test_example_assembles() {
         "examples/basics/plasma.asm",
         "examples/basics/time_pulse.asm",
         "examples/input/mouse_rings.asm",
+        "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
         "examples/textures/multi_image_mix.asm",
         "examples/raymarch/planet_sphere.asm",
