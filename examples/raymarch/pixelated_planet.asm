@@ -23,7 +23,7 @@ mul tmp2, tmp0, tmp0
 mul tmp3, tmp1, tmp1
 add tmp2, tmp2, tmp3
 
-; Planet disk. Clouds are hidden while terrain noise is being tuned.
+; Planet disk.
 lt tmp4, tmp2, 0.80
 jnz tmp4, planet
 jmp stars
@@ -209,27 +209,72 @@ add color_a, color_a, tmp9
 gt tmp3, color_a, 0.42
 jnz tmp3, sand
 mov tmp2, 0.0
-jmp shade
+jmp cloud_overlay
 
 sand:
 gt tmp3, color_a, 0.48
 jnz tmp3, land
 mov tmp2, 1.0
-jmp shade
+jmp cloud_overlay
 
 land:
 gt tmp3, color_a, 0.68
 jnz tmp3, highland
 mov tmp2, 2.0
-jmp shade
+jmp cloud_overlay
 
 highland:
 mov tmp2, 3.0
+jmp cloud_overlay
+
+cloud_overlay:
+; Single-threshold cloud mask. It uses the same rotated sphere point as the
+; terrain, but with its own seed/frequency and a slightly faster rotation.
+mul tmp3, time, 0.12
+add tmp3, tmp12, tmp3
+add tmp3, tmp3, 1.71
+mul tmp3, tmp3, 8.0
+floor tmp5, tmp3
+
+add tmp4, tmp8, 1.43
+mul tmp4, tmp4, 8.0
+floor tmp9, tmp4
+
+mul tmp10, time, 0.08
+add tmp10, tmp14, tmp10
+add tmp10, tmp10, 1.29
+mul tmp10, tmp10, 8.0
+floor tmp10, tmp10
+
+mul color_r, tmp5, 19.0
+mul color_g, tmp9, 31.0
+add color_r, color_r, color_g
+mul color_g, tmp10, 47.0
+add color_r, color_r, color_g
+mul tmp11, tmp5, tmp9
+mul tmp11, tmp11, 13.0
+add color_r, color_r, tmp11
+mul tmp11, tmp9, tmp10
+mul tmp11, tmp11, 17.0
+add color_r, color_r, tmp11
+mul tmp11, tmp10, tmp5
+mul tmp11, tmp11, 23.0
+add color_r, color_r, tmp11
+add color_r, color_r, 5003.0
+mod color_r, color_r, 61.0
+div color_r, color_r, 61.0
+
+gt tmp3, color_r, 0.76
+jnz tmp3, cloud_color
 jmp shade
 
+cloud_color:
+out 0.86, 0.90, 0.84, 1.0
+ret
+
 planet_shell_overlay:
-; Hidden for now. Keep the label around so the cloud shell can be restored
-; against the same terrain noise path later.
+; Legacy cloud-shell path is disabled while the planet uses the simple
+; terrain-attached cloud mask above.
 jmp shade
 mov tmp2, 1.0
 jmp compute_cloud_shell
