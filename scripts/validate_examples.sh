@@ -30,6 +30,9 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/video/poster_edges.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --dry-run
+./build/asm-shader-toy examples/video/channel_metadata.asm \
+    --video0 examples/assets/video/testsrc_160x90.mp4 \
+    --dry-run
 
 ./build/asm-shader-toy examples/basics/consts.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 2
@@ -63,6 +66,11 @@ cd "${repo_root}"
     --no-graphics \
     --frames 4
 ./build/asm-shader-toy examples/video/poster_edges.asm \
+    --video0 examples/assets/video/testsrc_160x90.mp4 \
+    --size 160x90 \
+    --no-graphics \
+    --frames 4
+./build/asm-shader-toy examples/video/channel_metadata.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --size 160x90 \
     --no-graphics \

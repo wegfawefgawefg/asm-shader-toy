@@ -458,15 +458,15 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
 
 std::optional<Op> parse_op(std::string_view op) {
     static const std::map<std::string_view, Op> ops{
-        {"mov", Op::Mov}, {"add", Op::Add},     {"sub", Op::Sub},     {"mul", Op::Mul},
-        {"div", Op::Div}, {"sin", Op::Sin},     {"cos", Op::Cos},     {"sqrt", Op::Sqrt},
-        {"abs", Op::Abs}, {"floor", Op::Floor}, {"fract", Op::Fract}, {"min", Op::Min},
-        {"max", Op::Max}, {"mod", Op::Mod},     {"norm", Op::Norm},   {"lt", Op::Lt},
-        {"gt", Op::Gt},   {"eq", Op::Eq},       {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
-        {"jz", Op::Jz},   {"jeq", Op::Jeq},     {"jne", Op::Jne},     {"jlt", Op::Jlt},
-        {"jle", Op::Jle}, {"jgt", Op::Jgt},     {"jge", Op::Jge},     {"call", Op::Call},
-        {"out", Op::Out}, {"out8", Op::Out8},   {"tex", Op::Tex},     {"texel", Op::Texel},
-        {"ret", Op::Ret}, {"halt", Op::Halt},
+        {"mov", Op::Mov},     {"add", Op::Add},       {"sub", Op::Sub},     {"mul", Op::Mul},
+        {"div", Op::Div},     {"sin", Op::Sin},       {"cos", Op::Cos},     {"sqrt", Op::Sqrt},
+        {"abs", Op::Abs},     {"floor", Op::Floor},   {"fract", Op::Fract}, {"min", Op::Min},
+        {"max", Op::Max},     {"mod", Op::Mod},       {"norm", Op::Norm},   {"lt", Op::Lt},
+        {"gt", Op::Gt},       {"eq", Op::Eq},         {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
+        {"jz", Op::Jz},       {"jeq", Op::Jeq},       {"jne", Op::Jne},     {"jlt", Op::Jlt},
+        {"jle", Op::Jle},     {"jgt", Op::Jgt},       {"jge", Op::Jge},     {"call", Op::Call},
+        {"out", Op::Out},     {"out8", Op::Out8},     {"tex", Op::Tex},     {"texel", Op::Texel},
+        {"chdim", Op::Chdim}, {"chtime", Op::Chtime}, {"ret", Op::Ret},     {"halt", Op::Halt},
     };
 
     const auto it = ops.find(op);
@@ -494,6 +494,7 @@ int expected_operands(Op op) {
         return 1;
     case Op::Jnz:
     case Op::Jz:
+    case Op::Chtime:
         return 2;
     case Op::Add:
     case Op::Sub:
@@ -512,6 +513,7 @@ int expected_operands(Op op) {
     case Op::Jle:
     case Op::Jgt:
     case Op::Jge:
+    case Op::Chdim:
         return 3;
     case Op::Out:
     case Op::Out8:
@@ -543,7 +545,10 @@ bool operand_must_be_register(Op op, int index) {
     case Op::Lt:
     case Op::Gt:
     case Op::Eq:
+    case Op::Chtime:
         return index == 0;
+    case Op::Chdim:
+        return index == 0 || index == 1;
     case Op::Tex:
     case Op::Texel:
         return index >= 0 && index <= 3;
@@ -603,6 +608,8 @@ bool operand_must_be_label(Op op, int index) {
     case Op::Out8:
     case Op::Tex:
     case Op::Texel:
+    case Op::Chdim:
+    case Op::Chtime:
     case Op::Ret:
     case Op::Halt:
         return false;
@@ -663,6 +670,8 @@ bool op_allowed_in_consts(Op op) {
     switch (op) {
     case Op::Tex:
     case Op::Texel:
+    case Op::Chdim:
+    case Op::Chtime:
     case Op::Out:
     case Op::Out8:
         return false;
@@ -879,6 +888,14 @@ struct ConstEnv {
 
     [[nodiscard]] Rgba sample_channel_texel(int, int, int) const {
         return Rgba{};
+    }
+
+    [[nodiscard]] std::pair<int, int> channel_dimensions(int) const {
+        return {0, 0};
+    }
+
+    [[nodiscard]] float channel_time(int) const {
+        return 0.0F;
     }
 };
 

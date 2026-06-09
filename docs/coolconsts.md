@@ -84,6 +84,8 @@ Rejected in `.consts`:
 
 - `tex`, because it samples runtime channels
 - `texel`, because it samples runtime channels
+- `chdim`, because it reads runtime channel metadata
+- `chtime`, because it reads runtime channel metadata
 - `out`, because there is no runtime pixel output
 - `out8`, because there is no runtime pixel output
 - runtime input aliases such as `px`, `py`, `time`, `width`, `height`,

@@ -42,6 +42,8 @@ enum class Op {
     Out8,
     Tex,
     Texel,
+    Chdim,
+    Chtime,
     Ret,
     Halt,
 };

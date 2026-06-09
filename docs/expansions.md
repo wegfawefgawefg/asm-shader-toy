@@ -35,21 +35,22 @@ worth serious consideration. The intent is to pick through these one by one.
    assigned slots as constants. It reuses the shared opcode executor for all
    non-runtime ops instead of adding an infix expression language.
 
-6. Channel dimensions.
+6. Channel dimensions. Done.
 
    Add a query instruction such as `chdim dw, dh, channel` so shaders can adapt
    to image, video, webcam, and buffer dimensions without hard-coded values.
 
-7. Channel time.
+7. Channel time. Done.
 
    Add a query instruction or input mapping for per-channel playback time. This
    mainly matters for video and future audio channels.
 
-8. Texture sampling modes.
+8. Texture sampling modes. Deferred.
 
-   Add explicit control for nearest versus linear sampling, and clamp versus
-   wrap or mirror addressing. Nearest/clamp should remain the default because it
-   matches the pixel-art/debugging posture.
+   Keep `tex` nearest-neighbor and clamp-to-edge for now. Shadertoy exposes
+   channel sampling controls, but this project can keep the default small and
+   let shaders use `fract`, `min`, and `max` when they want custom wrapping or
+   clamping behavior.
 
 9. Streaming video decode.
 

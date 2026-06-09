@@ -353,6 +353,7 @@ ast::ImageChannel make_buffer_channel(int width, int height,
     ast::ImageChannel channel;
     channel.width = width;
     channel.height = height;
+    channel.time = 0.0F;
     channel.external_pixels = &pixels;
     return channel;
 }
@@ -504,6 +505,8 @@ void update_video_channels(ast::ChannelSet& channels,
                                      static_cast<long long>(video.frames.size()));
         channels.image[i].width = video.width;
         channels.image[i].height = video.height;
+        channels.image[i].time =
+            static_cast<float>(static_cast<double>(frame_index) / video.frames_per_second);
         channels.image[i].pixels.clear();
         channels.image[i].external_pixels = &video.frames[frame_index];
     }
@@ -633,7 +636,7 @@ bool drain_webcam_frame(WebcamChannel& webcam) {
 }
 
 bool update_webcam_channels(ast::ChannelSet& channels,
-                            std::array<WebcamChannel, 4>& webcam_channels) {
+                            std::array<WebcamChannel, 4>& webcam_channels, float time) {
     for (std::size_t i = 0; i < webcam_channels.size(); ++i) {
         WebcamChannel& webcam = webcam_channels[i];
         if (webcam.pipe == nullptr) {
@@ -645,6 +648,7 @@ bool update_webcam_channels(ast::ChannelSet& channels,
         }
         channels.image[i].width = webcam.width;
         channels.image[i].height = webcam.height;
+        channels.image[i].time = time;
         channels.image[i].pixels.clear();
         channels.image[i].external_pixels = &webcam.pixels;
     }
@@ -1061,7 +1065,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    if (!update_webcam_channels(channels, webcam_channels)) {
+    if (!update_webcam_channels(channels, webcam_channels, 0.0F)) {
         IMG_Quit();
         SDL_Quit();
         return 1;
@@ -1098,7 +1102,7 @@ int main(int argc, char** argv) {
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
             update_video_channels(channels, video_channels, static_cast<double>(time));
-            if (!update_webcam_channels(channels, webcam_channels)) {
+            if (!update_webcam_channels(channels, webcam_channels, time)) {
                 IMG_Quit();
                 SDL_Quit();
                 return 1;
@@ -1234,7 +1238,7 @@ int main(int argc, char** argv) {
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
         update_video_channels(channels, video_channels, static_cast<double>(elapsed.count()));
-        if (!update_webcam_channels(channels, webcam_channels)) {
+        if (!update_webcam_channels(channels, webcam_channels, elapsed.count())) {
             running = false;
             break;
         }

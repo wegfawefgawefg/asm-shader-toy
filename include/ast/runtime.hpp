@@ -63,6 +63,7 @@ struct Rgba {
 struct ImageChannel {
     int width = 0;
     int height = 0;
+    float time = 0.0F;
     std::vector<std::uint32_t> pixels;
     const std::vector<std::uint32_t>* external_pixels = nullptr;
 

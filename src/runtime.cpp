@@ -129,6 +129,26 @@ struct RuntimeEnv {
     [[nodiscard]] Rgba sample_channel_texel(int channel_index, int x, int y) const {
         return sample_channel_texel_image(channels, channel_index, x, y);
     }
+
+    [[nodiscard]] std::pair<int, int> channel_dimensions(int channel_index) const {
+        if (channels == nullptr || channel_index < 0 ||
+            channel_index >= static_cast<int>(channels->image.size())) {
+            return {0, 0};
+        }
+        const ImageChannel& channel = channels->image[static_cast<std::size_t>(channel_index)];
+        if (!channel.loaded()) {
+            return {0, 0};
+        }
+        return {channel.width, channel.height};
+    }
+
+    [[nodiscard]] float channel_time(int channel_index) const {
+        if (channels == nullptr || channel_index < 0 ||
+            channel_index >= static_cast<int>(channels->image.size())) {
+            return 0.0F;
+        }
+        return channels->image[static_cast<std::size_t>(channel_index)].time;
+    }
 };
 
 Rgba run_pixel_registers(const Program& program, Registers registers, const ChannelSet* channels,

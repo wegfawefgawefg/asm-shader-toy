@@ -227,6 +227,8 @@ out r, g, b, a      ; normalized 0..1 channels
 out8 r, g, b, a     ; byte 0..255 channels
 tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
+chdim dw, dh, channel
+chtime dst, channel
 ret
 halt
 ```
@@ -242,6 +244,11 @@ channels in the four destination registers.
 
 `texel` samples one of the same channels using pixel coordinates. Out-of-bounds
 coordinates return transparent black instead of clamping.
+
+`chdim` reads channel dimensions into two destination registers. `chtime` reads
+the channel-local time in seconds. Static images and feedback buffers currently
+report `0` time; videos report loop-local playback time, and webcams report
+seconds since the stream was opened.
 
 ## Feedback Buffers
 

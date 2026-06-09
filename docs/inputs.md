@@ -72,6 +72,8 @@ Sampling is explicit:
 .include <std/screen.inc>
 
 tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+chdim tmp0, tmp1, 0
+chtime tmp2, 0
 out tex0_r, tex0_g, tex0_b, tex0_a
 ```
 
@@ -90,6 +92,8 @@ Current behavior:
 - sampled color returns normalized `0..1` RGBA floats
 - `texel` samples direct pixel coordinates and returns transparent black outside
   the channel bounds
+- `chdim` reads channel width and height
+- `chtime` reads channel-local time in seconds
 
 Buffer N renders into channel N before the image pass:
 
@@ -108,7 +112,8 @@ Webcam channels stream `320x240` frames through a nonblocking pipe and reuse the
 latest complete frame when the camera has not produced a newer one. `--webcam0`
 defaults to `/dev/video0`; pass a device path after the flag to override it.
 Webcam channels are mirrored horizontally by default so shaders can sample them
-like normal preview images.
+like normal preview images. Webcam `chtime` reports seconds since the stream was
+opened. Video `chtime` reports loop-local playback time.
 
 ## Expansion Plan
 
@@ -123,9 +128,6 @@ Near-term scalar inputs:
 Next channel support:
 
 - streaming video decode instead of preloading all frames
-- linear sampling mode
-- wrap address mode
-- channel metadata registers or query instructions for width, height, time
 
 Later channel support:
 

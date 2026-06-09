@@ -107,13 +107,10 @@ Current:
 ```asm
 tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
-```
-
-Likely additions:
-
-```asm
 chdim dw, dh, channel
+chtime dt, channel
 ```
 
-`texel` samples pixel coordinates directly. `chdim` would expose channel
-dimensions without spending fixed input registers.
+`texel` samples pixel coordinates directly. `chdim` exposes channel dimensions
+without spending fixed input registers. `chtime` exposes channel-local time in
+seconds.

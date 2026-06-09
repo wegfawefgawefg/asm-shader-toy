@@ -129,6 +129,16 @@ void test_const_block_rejects_runtime_only_ops() {
     require(!result.ok(), ".consts rejects runtime output ops");
 }
 
+void test_const_block_rejects_channel_metadata_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+            chdim w, h, 0
+        .end
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), ".consts rejects channel metadata ops");
+}
+
 void test_const_block_max_steps_reports_error() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         .consts
@@ -400,6 +410,40 @@ void test_texel_out_of_bounds_is_black() {
             "out-of-bounds texel samples transparent black");
 }
 
+void test_channel_dimensions_and_time() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        chdim r16, r17, 0
+        chtime r18, 0
+        out8 r16, r17, r18, 255
+    )");
+
+    require(result.ok(), "channel metadata program assembles");
+
+    ast::ChannelSet channels;
+    channels.image[0].width = 12;
+    channels.image[0].height = 34;
+    channels.image[0].time = 56.0F;
+    channels.image[0].pixels = {0xFFFFFFFFU};
+
+    ast::PixelInputs inputs;
+    inputs.channels = &channels;
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    require(color.r == 12 && color.g == 34 && color.b == 56,
+            "channel metadata instructions read dimensions and time");
+}
+
+void test_missing_channel_metadata_is_zero() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        chdim r16, r17, 3
+        chtime r18, 3
+        out8 r16, r17, r18, 255
+    )");
+
+    require(result.ok(), "missing channel metadata program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 0 && color.g == 0 && color.b == 0, "missing channel metadata reads as zero");
+}
+
 void test_file_dependencies_include_main_and_includes() {
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
@@ -487,6 +531,7 @@ void test_example_assembles() {
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
         "examples/textures/multi_image_mix.asm",
+        "examples/video/channel_metadata.asm",
         "examples/video/poster_edges.asm",
         "examples/video/video_channel.asm",
         "examples/webcam/webcam_channel.asm",
@@ -516,6 +561,7 @@ int main() {
     test_const_block_branches_local_labels_and_calls();
     test_const_block_rejects_runtime_aliases();
     test_const_block_rejects_runtime_only_ops();
+    test_const_block_rejects_channel_metadata_ops();
     test_const_block_max_steps_reports_error();
     test_subroutine_call_ret_and_halt();
     test_ret_without_call_still_halts();
@@ -534,6 +580,8 @@ int main() {
     test_texture_sampling();
     test_texel_sampling();
     test_texel_out_of_bounds_is_black();
+    test_channel_dimensions_and_time();
+    test_missing_channel_metadata_is_zero();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();
     test_recursive_include_reports_error();

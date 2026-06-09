@@ -26,6 +26,10 @@ Run from the repository root after building:
   --video0 examples/assets/video/big_buck_bunny_4m34s_640x360.mp4 \
   --size 320x180 \
   --scale 2
+./build/asm-shader-toy examples/video/channel_metadata.asm \
+  --video0 examples/assets/video/big_buck_bunny_4m34s_640x360.mp4 \
+  --size 320x180 \
+  --scale 2
 ./build/asm-shader-toy examples/webcam/webcam_channel.asm \
   --webcam0 \
   --size 320x240 \

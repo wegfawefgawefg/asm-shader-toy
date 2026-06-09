@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 namespace ast::detail {
 
@@ -194,6 +195,15 @@ StopReason execute_program(const Program& program, Env& env, const RunLimits& li
             write(3, byte_to_unorm(sample.a));
             break;
         }
+        case Op::Chdim: {
+            const auto dimensions = env.channel_dimensions(static_cast<int>(value(2)));
+            write(0, static_cast<float>(dimensions.first));
+            write(1, static_cast<float>(dimensions.second));
+            break;
+        }
+        case Op::Chtime:
+            write(0, env.channel_time(static_cast<int>(value(1))));
+            break;
         case Op::Ret:
             if (call_depth > 0) {
                 --call_depth;
