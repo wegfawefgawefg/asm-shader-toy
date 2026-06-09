@@ -27,6 +27,7 @@ Runnable examples live in `examples/`:
 - `examples/textures/image_passthrough.asm`
 - `examples/textures/multi_image_mix.asm`
 - `examples/raymarch/planet_sphere.asm`
+- `examples/raymarch/pixelated_planet.asm`
 - `examples/assets/video/testsrc_160x90.mp4` exists as a future fixture; video
   channels are not implemented yet.
 

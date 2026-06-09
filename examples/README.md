@@ -7,6 +7,7 @@ Run from the repository root after building:
 ./build/asm-shader-toy examples/input/mouse_rings.asm
 ./build/asm-shader-toy examples/multifile/main.asm
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm
 ./build/asm-shader-toy examples/textures/image_passthrough.asm --channel0 examples/assets/checker.png
 ./build/asm-shader-toy examples/textures/multi_image_mix.asm \
   --channel0 examples/assets/checker.png \
@@ -44,3 +45,6 @@ scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 
 The current runner supports static image channels. Webcam, video, audio, and
 Shadertoy-style buffer passes are planned but not implemented yet.
+
+`raymarch/pixelated_planet.asm` is adapted from the CC0 Godot Shaders post
+"3D Pixelated Planet", which credits the YouTube short as inspiration.
