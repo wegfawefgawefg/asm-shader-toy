@@ -6,7 +6,7 @@
 
 namespace ast {
 
-constexpr int register_count = 32;
+constexpr int register_count = 64;
 
 enum class Op {
     Mov,

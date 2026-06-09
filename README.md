@@ -32,6 +32,17 @@ Image inputs can be loaded into channels:
 ./build/asm-shader-toy my.asm --channel0 image.png --channel1 mask.jpg
 ```
 
+Multi-file programs use `.include` with paths relative to the including file:
+
+```asm
+.include "common/math.inc"
+.include "common/screen.inc"
+```
+
+See [examples/README.md](examples/README.md) for runnable examples covering
+time, mouse, image channels, multi-image mixing, includes, and a planet/sphere
+visual.
+
 `--scale` and `--dimscale` are aliases. The interpreter always renders the
 intermediate texture size; SDL handles scaling that texture into the window.
 

@@ -250,7 +250,7 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
                 continue;
             }
             if (*reg < 16) {
-                add_diag(state, file, line_no, ".alias may only name scratch registers r16..r31");
+                add_diag(state, file, line_no, ".alias may only name scratch registers r16..r63");
                 continue;
             }
             state.aliases[lower(tokens[1])] = Alias{*reg, true};

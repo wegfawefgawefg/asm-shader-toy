@@ -16,6 +16,16 @@ That is enough for shared constants, aliases, and helper blocks. The next useful
 step is include guards or a `.once` directive so common files can be included by
 multiple files without duplicate labels.
 
+Runnable examples live in `examples/`:
+
+- `examples/common/math.inc`
+- `examples/common/screen.inc`
+- `examples/time_pulse.asm`
+- `examples/mouse_rings.asm`
+- `examples/image_passthrough.asm`
+- `examples/multi_image_mix.asm`
+- `examples/planet_sphere.asm`
+
 ## Subroutines
 
 Labels plus `jmp`/`jnz` are enough for loops, but not for reusable functions.
@@ -90,4 +100,3 @@ chdim dw, dh, channel
 
 `texel` samples pixel coordinates directly. `chdim` exposes channel dimensions
 without spending fixed input registers.
-

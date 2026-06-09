@@ -50,7 +50,7 @@ norm u, px, width
 mov color_r, u
 ```
 
-User aliases may only target `r16..r31`.
+User aliases may only target `r16..r63`.
 
 ## Labels
 
@@ -68,7 +68,7 @@ loops do not hang a frame forever.
 
 ## Registers
 
-There are 32 float registers: `r0` through `r31`.
+There are 64 float registers: `r0` through `r63`.
 
 Initial registers:
 

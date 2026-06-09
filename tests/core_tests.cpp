@@ -98,6 +98,16 @@ void test_named_inputs_and_aliases() {
     require(color.g == 128, "named py/height aliases work");
 }
 
+void test_high_register_aliases_are_allowed() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .alias hi, r63
+        mov hi, 1.0
+        out hi, hi, hi, hi
+    )");
+
+    require(result.ok(), "r63 can be named as scratch");
+}
+
 void test_input_aliases_are_read_only() {
     const ast::AssembleResult result = ast::assemble_source("mov time, 1.0\n");
     require(!result.ok(), "input aliases cannot be destinations");
@@ -129,12 +139,20 @@ void test_texture_sampling() {
 }
 
 void test_example_assembles() {
-    if (!std::filesystem::exists("examples/plasma.asm")) {
+    if (!std::filesystem::exists("examples")) {
         return;
     }
 
-    const ast::AssembleResult result = ast::assemble_file("examples/plasma.asm");
-    require(result.ok(), "example plasma program assembles");
+    const char* examples[] = {
+        "examples/plasma.asm",          "examples/time_pulse.asm",
+        "examples/mouse_rings.asm",     "examples/image_passthrough.asm",
+        "examples/multi_image_mix.asm", "examples/planet_sphere.asm",
+    };
+
+    for (const char* path : examples) {
+        const ast::AssembleResult result = ast::assemble_file(path);
+        require(result.ok(), std::string{path} + " assembles");
+    }
 }
 
 void test_diagnostics() {
@@ -151,6 +169,7 @@ int main() {
     test_unary_math_uses_destination_and_source();
     test_frame_inputs_seed_registers();
     test_named_inputs_and_aliases();
+    test_high_register_aliases_are_allowed();
     test_input_aliases_are_read_only();
     test_texture_sampling();
     test_example_assembles();
