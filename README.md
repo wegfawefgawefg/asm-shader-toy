@@ -32,6 +32,12 @@ Or run a specific program:
 ./build/asm-shader-toy examples/basics/plasma.asm --size 240x160 --dimscale 4
 ```
 
+Show a small FPS overlay in the window:
+
+```sh
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --fps
+```
+
 Graphical runs hot reload the active program and any `.include` dependencies
 when they are saved. If a reload has assembly errors, diagnostics are printed
 and the last good program keeps running.
@@ -51,6 +57,7 @@ Headless validation:
   --size 506x632 \
   --frames 90 \
   --save-frame /tmp/pixel_planet.png
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --measure-fps 120
 ```
 
 Multi-file programs use `.include` with paths relative to the including file:

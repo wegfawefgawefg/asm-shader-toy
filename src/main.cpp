@@ -3,8 +3,10 @@
 
 #include <SDL.h>
 #include <SDL_image.h>
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
@@ -28,6 +30,8 @@ struct Args {
     int frames = -1;
     bool dry_run = false;
     bool no_graphics = false;
+    bool show_fps = false;
+    int measure_fps_frames = 0;
     std::string save_frame_path;
     std::array<std::string, 4> channel_paths;
 };
@@ -139,6 +143,23 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--fps") {
+            args.show_fps = true;
+            continue;
+        }
+        if (arg == "--measure-fps") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.measure_fps_frames = std::atoi(std::string{*value}.c_str());
+            if (args.measure_fps_frames <= 0) {
+                return std::nullopt;
+            }
+            args.no_graphics = true;
+            args.frames = args.measure_fps_frames;
+            continue;
+        }
         if (arg == "--channel0" || arg == "--channel1" || arg == "--channel2" ||
             arg == "--channel3") {
             const auto value = next();
@@ -165,6 +186,8 @@ void print_usage() {
               << "       --dry-run assembles and validates image inputs without rendering\n"
               << "       --no-graphics --frames N renders N CPU frames without a window\n"
               << "       --save-frame path.png renders one headless frame to a PNG\n"
+              << "       --fps shows a small FPS overlay in graphical runs\n"
+              << "       --measure-fps N renders N CPU frames and prints average FPS\n"
               << "       graphical runs hot reload the program and its includes on save\n";
 }
 
@@ -294,6 +317,137 @@ void print_diagnostics(const std::vector<ast::Diagnostic>& diagnostics) {
     }
 }
 
+const char* glyph_rows(char ch) {
+    switch (ch) {
+    case '0':
+        return "111"
+               "101"
+               "101"
+               "101"
+               "111";
+    case '1':
+        return "010"
+               "110"
+               "010"
+               "010"
+               "111";
+    case '2':
+        return "111"
+               "001"
+               "111"
+               "100"
+               "111";
+    case '3':
+        return "111"
+               "001"
+               "111"
+               "001"
+               "111";
+    case '4':
+        return "101"
+               "101"
+               "111"
+               "001"
+               "001";
+    case '5':
+        return "111"
+               "100"
+               "111"
+               "001"
+               "111";
+    case '6':
+        return "111"
+               "100"
+               "111"
+               "101"
+               "111";
+    case '7':
+        return "111"
+               "001"
+               "010"
+               "010"
+               "010";
+    case '8':
+        return "111"
+               "101"
+               "111"
+               "101"
+               "111";
+    case '9':
+        return "111"
+               "101"
+               "111"
+               "001"
+               "111";
+    case 'F':
+        return "111"
+               "100"
+               "110"
+               "100"
+               "100";
+    case 'P':
+        return "110"
+               "101"
+               "110"
+               "100"
+               "100";
+    case 'S':
+        return "111"
+               "100"
+               "111"
+               "001"
+               "111";
+    case ':':
+        return "000"
+               "010"
+               "000"
+               "010"
+               "000";
+    case '.':
+        return "000"
+               "000"
+               "000"
+               "000"
+               "010";
+    default:
+        return "000"
+               "000"
+               "000"
+               "000"
+               "000";
+    }
+}
+
+void draw_debug_text(SDL_Renderer* renderer, const std::string& text, int x, int y, int scale,
+                     SDL_Color color) {
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+    const SDL_Rect background{x - 4, y - 4,
+                              static_cast<int>(text.size()) * 4 * scale + 6, 5 * scale + 8};
+    SDL_RenderFillRect(renderer, &background);
+
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    int cursor_x = x;
+    for (char ch : text) {
+        if (ch == ' ') {
+            cursor_x += 2 * scale;
+            continue;
+        }
+
+        const char* rows = glyph_rows(ch);
+        for (int row = 0; row < 5; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                if (rows[row * 3 + col] != '1') {
+                    continue;
+                }
+                const SDL_Rect rect{cursor_x + col * scale, y + row * scale, scale, scale};
+                SDL_RenderFillRect(renderer, &rect);
+            }
+        }
+        cursor_x += 4 * scale;
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -353,6 +507,7 @@ int main(int argc, char** argv) {
     if (args.no_graphics) {
         std::vector<std::uint32_t> pixels;
         const int frame_count = args.frames >= 0 ? args.frames : 1;
+        const auto measure_start = std::chrono::steady_clock::now();
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
             const ast::FrameInputs frame_inputs =
@@ -360,11 +515,27 @@ int main(int argc, char** argv) {
             ast::render_frame(assembled.program, frame_inputs, pixels,
                               ast::RunLimits{args.max_steps});
         }
+        const auto measure_end = std::chrono::steady_clock::now();
         if (!args.save_frame_path.empty() &&
             !save_frame_png(args.save_frame_path, args.width, args.height, pixels)) {
             IMG_Quit();
             SDL_Quit();
             return 1;
+        }
+        if (args.measure_fps_frames > 0) {
+            const std::chrono::duration<double> elapsed = measure_end - measure_start;
+            const double seconds = elapsed.count();
+            const double fps = seconds > 0.0 ? static_cast<double>(frame_count) / seconds : 0.0;
+            const double ms_per_frame = seconds > 0.0
+                                            ? (seconds * 1000.0) / static_cast<double>(frame_count)
+                                            : 0.0;
+            std::cout << "frames: " << frame_count << '\n'
+                      << "seconds: " << seconds << '\n'
+                      << "average_fps: " << fps << '\n'
+                      << "ms_per_frame: " << ms_per_frame << '\n';
+            IMG_Quit();
+            SDL_Quit();
+            return 0;
         }
         std::cout << "ok: rendered " << frame_count << " frame";
         if (frame_count != 1) {
@@ -422,6 +593,9 @@ int main(int argc, char** argv) {
     auto previous_reload_check = start;
     FileWriteTimes dependency_snapshot = snapshot_dependencies(assembled.dependencies);
     int frame = 0;
+    float fps_accumulator = 0.0F;
+    int fps_frame_count = 0;
+    float displayed_fps = 0.0F;
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
     float mouse_down = 0.0F;
@@ -457,6 +631,13 @@ int main(int argc, char** argv) {
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
         previous_frame_time = now;
+        fps_accumulator += std::max(delta.count(), 0.0F);
+        ++fps_frame_count;
+        if (fps_accumulator >= 0.5F) {
+            displayed_fps = static_cast<float>(fps_frame_count) / fps_accumulator;
+            fps_accumulator = 0.0F;
+            fps_frame_count = 0;
+        }
 
         if (now - previous_reload_check >= std::chrono::milliseconds{250}) {
             previous_reload_check = now;
@@ -484,8 +665,15 @@ int main(int argc, char** argv) {
 
         SDL_UpdateTexture(texture, nullptr, pixels.data(),
                           args.width * static_cast<int>(sizeof(std::uint32_t)));
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        if (args.show_fps) {
+            char fps_text[32]{};
+            std::snprintf(fps_text, sizeof(fps_text), "FPS: %.1f",
+                          static_cast<double>(displayed_fps));
+            draw_debug_text(renderer, fps_text, 12, 12, 3, SDL_Color{235, 245, 210, 255});
+        }
         SDL_RenderPresent(renderer);
     }
 

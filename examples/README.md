@@ -16,6 +16,8 @@ Run from the repository root after building:
 
 Windowed examples hot reload the main file and any `.include` files on save.
 Headless `--dry-run`, `--no-graphics`, and `--save-frame` runs do not watch.
+Pass `--fps` to show a small window overlay, or `--measure-fps N` to render
+`N` CPU frames and print average throughput.
 
 Folders:
 
