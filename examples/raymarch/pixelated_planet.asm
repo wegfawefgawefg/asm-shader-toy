@@ -23,9 +23,11 @@ mul tmp2, tmp0, tmp0
 mul tmp3, tmp1, tmp1
 add tmp2, tmp2, tmp3
 
-; Planet disk.
+; Planet disk plus a slightly larger cloud shell.
 lt tmp4, tmp2, 0.80
 jnz tmp4, planet
+lt tmp4, tmp2, 1.02
+jnz tmp4, cloud_shell_only
 jmp stars
 
 stars:
@@ -228,21 +230,36 @@ mov tmp2, 3.0
 jmp cloud_overlay
 
 cloud_overlay:
-; Single-threshold cloud mask. It uses the same rotated sphere point as the
-; terrain, but with its own seed/frequency and a slightly faster rotation.
-mul tmp3, time, 0.12
-add tmp3, tmp12, tmp3
-add tmp3, tmp3, 1.71
+; Single-threshold cloud mask on a larger projected sphere, not the terrain
+; surface. tmp2 is material inside the planet, or -1 outside the planet.
+div tmp3, tmp0, 1.01
+div tmp4, tmp1, 1.01
+mul tmp5, tmp3, tmp3
+mul tmp9, tmp4, tmp4
+add tmp5, tmp5, tmp9
+sub tmp5, 1.0, tmp5
+max tmp5, tmp5, 0.0
+sqrt tmp5, tmp5
+
+mul tmp9, time, 0.52
+cos tmp10, tmp9
+sin tmp11, tmp9
+mul color_r, tmp3, tmp10
+mul color_g, tmp5, tmp11
+add color_r, color_r, color_g
+mul color_g, tmp3, tmp11
+mul tmp13, tmp5, tmp10
+sub tmp13, tmp13, color_g
+
+add tmp3, color_r, 1.71
 mul tmp3, tmp3, 8.0
 floor tmp5, tmp3
 
-add tmp4, tmp8, 1.43
+add tmp4, tmp4, 1.43
 mul tmp4, tmp4, 8.0
 floor tmp9, tmp4
 
-mul tmp10, time, 0.08
-add tmp10, tmp14, tmp10
-add tmp10, tmp10, 1.29
+add tmp10, tmp13, 1.29
 mul tmp10, tmp10, 8.0
 floor tmp10, tmp10
 
@@ -266,6 +283,8 @@ div color_r, color_r, 61.0
 
 gt tmp3, color_r, 0.76
 jnz tmp3, cloud_color
+eq tmp3, tmp2, -1.0
+jnz tmp3, stars
 jmp shade
 
 cloud_color:
@@ -281,7 +300,8 @@ jmp compute_cloud_shell
 
 cloud_shell_only:
 ; Outside the planet but inside the larger cloud-shell disk.
-mov tmp2, 0.0
+mov tmp2, -1.0
+jmp cloud_overlay
 
 compute_cloud_shell:
 div tmp6, tmp0, 1.01
