@@ -97,9 +97,6 @@ mul tmp3, tmp7, 0.60
 add tmp15, tmp15, tmp3
 add tmp15, tmp15, 0.16
 max tmp15, tmp15, 0.0
-mul tmp15, tmp15, 6.0
-floor tmp15, tmp15
-div tmp15, tmp15, 6.0
 
 ; Terrain: three octaves of cheap 3D lattice noise in rotated sphere space.
 ; Nearest cells keep the pixel-art edge; no sine bands and no 2D polar seam.
@@ -209,34 +206,25 @@ mul tmp9, tmp14, -0.04
 add color_a, color_a, tmp9
 
 ; Height bands: water, sand shoreline, green land, light-green highland.
-mov color_r, 0.12
-mov color_g, 0.45
-mov color_b, 0.78
-
 gt tmp3, color_a, 0.42
 jnz tmp3, sand
+mov tmp2, 0.0
 jmp shade
 
 sand:
-mov color_r, 0.72
-mov color_g, 0.66
-mov color_b, 0.40
 gt tmp3, color_a, 0.48
 jnz tmp3, land
+mov tmp2, 1.0
 jmp shade
 
 land:
-mov color_r, 0.17
-mov color_g, 0.65
-mov color_b, 0.34
 gt tmp3, color_a, 0.68
 jnz tmp3, highland
+mov tmp2, 2.0
 jmp shade
 
 highland:
-mov color_r, 0.55
-mov color_g, 0.78
-mov color_b, 0.42
+mov tmp2, 3.0
 jmp shade
 
 planet_shell_overlay:
@@ -356,47 +344,77 @@ out 0.92, 0.96, 0.94, 1.0
 ret
 
 shade:
-; Night side goes purple/blue, day side goes bright.
-gt tmp3, tmp15, 0.22
-jnz tmp3, day_side
+; Three-band lighting color table. tmp2 is material:
+; 0 water, 1 sand, 2 land, 3 highland.
+gt tmp3, tmp15, 0.68
+jnz tmp3, shade_bright
+gt tmp3, tmp15, 0.28
+jnz tmp3, shade_mid
+jmp shade_dark
 
-mul color_r, color_r, 0.16
-mul color_g, color_g, 0.13
-mul color_b, color_b, 0.30
-add color_r, color_r, 0.10
-add color_g, color_g, 0.08
-add color_b, color_b, 0.16
-jmp dither
+shade_dark:
+eq tmp3, tmp2, 0.0
+jnz tmp3, water_dark
+eq tmp3, tmp2, 1.0
+jnz tmp3, sand_dark
+eq tmp3, tmp2, 2.0
+jnz tmp3, land_dark
+jmp highland_dark
 
-day_side:
-mul color_r, color_r, tmp15
-mul color_g, color_g, tmp15
-mul color_b, color_b, tmp15
-add color_r, color_r, 0.05
-add color_g, color_g, 0.07
-add color_b, color_b, 0.08
+shade_mid:
+eq tmp3, tmp2, 0.0
+jnz tmp3, water_mid
+eq tmp3, tmp2, 1.0
+jnz tmp3, sand_mid
+eq tmp3, tmp2, 2.0
+jnz tmp3, land_mid
+jmp highland_mid
 
-dither:
-; Sparse hash stipple near the terminator.
-sub tmp3, tmp15, 0.36
-abs tmp3, tmp3
-lt tmp3, tmp3, 0.12
-jnz tmp3, stipple_test
-out color_r, color_g, color_b, 1.0
+shade_bright:
+eq tmp3, tmp2, 0.0
+jnz tmp3, water_bright
+eq tmp3, tmp2, 1.0
+jnz tmp3, sand_bright
+eq tmp3, tmp2, 2.0
+jnz tmp3, land_bright
+jmp highland_bright
+
+water_dark:
+out 0.08, 0.12, 0.32, 1.0
+ret
+water_mid:
+out 0.10, 0.32, 0.62, 1.0
+ret
+water_bright:
+out 0.18, 0.52, 0.86, 1.0
 ret
 
-stipple_test:
-mul tmp4, px, 17.0
-mul tmp5, py, 31.0
-add tmp4, tmp4, tmp5
-sin tmp4, tmp4
-gt tmp4, tmp4, 0.66
-jnz tmp4, stipple
-out color_r, color_g, color_b, 1.0
+sand_dark:
+out 0.24, 0.20, 0.16, 1.0
+ret
+sand_mid:
+out 0.58, 0.50, 0.30, 1.0
+ret
+sand_bright:
+out 0.82, 0.74, 0.45, 1.0
 ret
 
-stipple:
-mul color_r, color_r, 0.72
-mul color_g, color_g, 0.72
-mul color_b, color_b, 0.72
-out color_r, color_g, color_b, 1.0
+land_dark:
+out 0.08, 0.22, 0.18, 1.0
+ret
+land_mid:
+out 0.14, 0.48, 0.28, 1.0
+ret
+land_bright:
+out 0.22, 0.68, 0.36, 1.0
+ret
+
+highland_dark:
+out 0.18, 0.26, 0.20, 1.0
+ret
+highland_mid:
+out 0.42, 0.62, 0.34, 1.0
+ret
+highland_bright:
+out 0.62, 0.82, 0.45, 1.0
+ret
