@@ -208,12 +208,20 @@ add color_a, color_a, color_r
 mul tmp9, tmp14, -0.04
 add color_a, color_a, tmp9
 
-; Base ocean/land/highland.
+; Height bands: water, sand shoreline, green land, light-green highland.
 mov color_r, 0.12
 mov color_g, 0.45
 mov color_b, 0.78
 
 gt tmp3, color_a, 0.42
+jnz tmp3, sand
+jmp shade
+
+sand:
+mov color_r, 0.72
+mov color_g, 0.66
+mov color_b, 0.40
+gt tmp3, color_a, 0.48
 jnz tmp3, land
 jmp shade
 
@@ -221,14 +229,14 @@ land:
 mov color_r, 0.17
 mov color_g, 0.65
 mov color_b, 0.34
-gt tmp3, color_a, 0.62
+gt tmp3, color_a, 0.68
 jnz tmp3, highland
 jmp shade
 
 highland:
-mov color_r, 0.58
-mov color_g, 0.72
-mov color_b, 0.55
+mov color_r, 0.55
+mov color_g, 0.78
+mov color_b, 0.42
 jmp shade
 
 planet_shell_overlay:
