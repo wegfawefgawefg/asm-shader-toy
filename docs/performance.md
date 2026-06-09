@@ -53,10 +53,10 @@ These are not accepted until measured against the benchmark matrix above.
 - Streaming video channels: `--videoN` currently preloads all decoded frames,
   which is fine for short fixtures but inappropriate for long movies. Decode a
   small ring of frames on demand before encouraging arbitrary user videos.
-- Nonblocking live inputs: `--webcamN` currently reads one frame synchronously
-  from `ffmpeg` each app frame. A future version should keep the most recent
-  camera frame in a small ring buffer and let rendering continue if capture
-  stalls.
+- Threaded live inputs: `--webcamN` now drains a nonblocking `ffmpeg` pipe and
+  reuses the latest complete frame. A future version should move capture into a
+  background thread with a small ring buffer so rendering is isolated from any
+  decoder or device stalls.
 - Optimized IR pass: constant folding, dead path cleanup, and tighter bytecode
   packing before interpretation.
 - GPU backend later: compile the asm IR to WGSL/GLSL after the CPU VM/debugger

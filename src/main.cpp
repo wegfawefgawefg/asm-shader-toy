@@ -6,17 +6,20 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -55,8 +58,9 @@ struct WebcamChannel {
     int width = 320;
     int height = 240;
     FILE* pipe = nullptr;
-    std::vector<std::uint8_t> raw_frame;
+    std::vector<std::uint8_t> pending_frame;
     std::vector<std::uint32_t> pixels;
+    std::size_t pending_bytes = 0;
 
     WebcamChannel() = default;
     WebcamChannel(const WebcamChannel&) = delete;
@@ -505,56 +509,122 @@ void update_video_channels(ast::ChannelSet& channels,
     }
 }
 
-bool read_webcam_frame(WebcamChannel& webcam) {
+void pack_webcam_frame(WebcamChannel& webcam) {
+    webcam.pixels.resize(static_cast<std::size_t>(webcam.width) *
+                         static_cast<std::size_t>(webcam.height));
+    for (std::size_t pixel = 0; pixel < webcam.pixels.size(); ++pixel) {
+        const std::uint8_t r = webcam.pending_frame[pixel * 4U + 0U];
+        const std::uint8_t g = webcam.pending_frame[pixel * 4U + 1U];
+        const std::uint8_t b = webcam.pending_frame[pixel * 4U + 2U];
+        const std::uint8_t a = webcam.pending_frame[pixel * 4U + 3U];
+        webcam.pixels[pixel] =
+            (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+    }
+}
+
+bool read_webcam_initial_frame(WebcamChannel& webcam) {
     if (webcam.pipe == nullptr) {
         return false;
     }
 
     const std::size_t frame_bytes =
         static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height) * 4U;
-    webcam.raw_frame.resize(frame_bytes);
-    std::size_t offset = 0;
-    while (offset < frame_bytes) {
-        const std::size_t read =
-            std::fread(webcam.raw_frame.data() + offset, 1, frame_bytes - offset, webcam.pipe);
-        if (read == 0) {
+    webcam.pending_frame.resize(frame_bytes);
+    webcam.pending_bytes = 0;
+
+    const int fd = fileno(webcam.pipe);
+    while (webcam.pending_bytes < frame_bytes) {
+        const ssize_t bytes_read = read(fd, webcam.pending_frame.data() + webcam.pending_bytes,
+                                        frame_bytes - webcam.pending_bytes);
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && errno == EINTR) {
+                continue;
+            }
             return false;
         }
-        offset += read;
+        webcam.pending_bytes += static_cast<std::size_t>(bytes_read);
     }
 
-    webcam.pixels.resize(static_cast<std::size_t>(webcam.width) *
-                         static_cast<std::size_t>(webcam.height));
-    for (std::size_t pixel = 0; pixel < webcam.pixels.size(); ++pixel) {
-        const std::uint8_t r = webcam.raw_frame[pixel * 4U + 0U];
-        const std::uint8_t g = webcam.raw_frame[pixel * 4U + 1U];
-        const std::uint8_t b = webcam.raw_frame[pixel * 4U + 2U];
-        const std::uint8_t a = webcam.raw_frame[pixel * 4U + 3U];
-        webcam.pixels[pixel] =
-            (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
-            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
-    }
+    pack_webcam_frame(webcam);
+    webcam.pending_bytes = 0;
     return true;
+}
+
+bool set_pipe_nonblocking(FILE* pipe) {
+    const int fd = fileno(pipe);
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return false;
+    }
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
 bool open_webcam_channel(const std::string& device, WebcamChannel& out) {
     out.width = 320;
     out.height = 240;
-    const std::string command = "ffmpeg -v error -f v4l2 -framerate 30 -i " + shell_quote(device) +
-                                " -vf scale=320:240 -f rawvideo -pix_fmt rgba - 2>/dev/null";
+    const std::string command =
+        "ffmpeg -v error -fflags nobuffer -flags low_delay -f v4l2 -framerate 30 "
+        "-video_size 320x240 -i " +
+        shell_quote(device) + " -f rawvideo -pix_fmt rgba - 2>/dev/null";
     out.pipe = popen(command.c_str(), "r");
     if (out.pipe == nullptr) {
         std::cerr << "failed to start webcam capture for " << device << '\n';
         return false;
     }
 
-    if (!read_webcam_frame(out)) {
+    if (!read_webcam_initial_frame(out)) {
         std::cerr << "failed to read webcam frame from " << device << '\n';
         pclose(out.pipe);
         out.pipe = nullptr;
         return false;
     }
+    if (!set_pipe_nonblocking(out.pipe)) {
+        std::cerr << "failed to set webcam pipe nonblocking for " << device << '\n';
+        pclose(out.pipe);
+        out.pipe = nullptr;
+        return false;
+    }
     return true;
+}
+
+bool drain_webcam_frame(WebcamChannel& webcam) {
+    if (webcam.pipe == nullptr) {
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height) * 4U;
+    webcam.pending_frame.resize(frame_bytes);
+    const int fd = fileno(webcam.pipe);
+    bool got_complete_frame = false;
+
+    while (true) {
+        const ssize_t bytes_read = read(fd, webcam.pending_frame.data() + webcam.pending_bytes,
+                                        frame_bytes - webcam.pending_bytes);
+        if (bytes_read > 0) {
+            webcam.pending_bytes += static_cast<std::size_t>(bytes_read);
+            if (webcam.pending_bytes == frame_bytes) {
+                pack_webcam_frame(webcam);
+                webcam.pending_bytes = 0;
+                got_complete_frame = true;
+            }
+            continue;
+        }
+
+        if (bytes_read == 0) {
+            return false;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return true;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        return false;
+    }
+
+    return got_complete_frame || !webcam.pixels.empty();
 }
 
 bool update_webcam_channels(ast::ChannelSet& channels,
@@ -564,7 +634,7 @@ bool update_webcam_channels(ast::ChannelSet& channels,
         if (webcam.pipe == nullptr) {
             continue;
         }
-        if (!read_webcam_frame(webcam)) {
+        if (!drain_webcam_frame(webcam)) {
             std::cerr << "webcam stream ended on channel " << i << '\n';
             return false;
         }
