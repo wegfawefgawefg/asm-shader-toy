@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -48,7 +49,8 @@ struct Operand {
 
 struct Instruction {
     Op op = Op::Ret;
-    std::vector<Operand> operands;
+    std::array<Operand, 7> operands;
+    int operand_count = 0;
     int line = 0;
     std::string file;
 };

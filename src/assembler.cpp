@@ -442,6 +442,7 @@ Program lower_program(ParseState& state) {
 
         Instruction instruction;
         instruction.op = op;
+        instruction.operand_count = expected;
         instruction.line = raw.line;
         instruction.file = raw.file;
 
@@ -452,7 +453,7 @@ Program lower_program(ParseState& state) {
                 failed = true;
                 break;
             }
-            instruction.operands.push_back(*operand);
+            instruction.operands[static_cast<std::size_t>(i)] = *operand;
         }
         if (!failed) {
             program.code.push_back(std::move(instruction));

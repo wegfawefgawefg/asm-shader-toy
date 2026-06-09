@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 namespace ast {
 namespace {
@@ -86,18 +87,32 @@ void seed_inputs(Registers& registers, const PixelInputs& inputs) {
     registers[15] = static_cast<float>(inputs.day);
 }
 
+void seed_frame_inputs(Registers& registers, const FrameInputs& inputs) {
+    registers.fill(0.0F);
+    registers[2] = inputs.time;
+    registers[3] = static_cast<float>(inputs.width);
+    registers[4] = static_cast<float>(inputs.height);
+    registers[5] = inputs.mouse_x;
+    registers[6] = inputs.mouse_y;
+    registers[7] = inputs.mouse_down;
+    registers[8] = inputs.mouse_click_x;
+    registers[9] = inputs.mouse_click_y;
+    registers[10] = static_cast<float>(inputs.frame);
+    registers[11] = inputs.time_delta;
+    registers[12] = inputs.wall_clock_seconds;
+    registers[13] = static_cast<float>(inputs.year);
+    registers[14] = static_cast<float>(inputs.month);
+    registers[15] = static_cast<float>(inputs.day);
+}
+
 std::uint32_t pack_rgba(Rgba rgba) {
     return (static_cast<std::uint32_t>(rgba.a) << 24U) |
            (static_cast<std::uint32_t>(rgba.b) << 16U) |
            (static_cast<std::uint32_t>(rgba.g) << 8U) | static_cast<std::uint32_t>(rgba.r);
 }
 
-} // namespace
-
-Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits) {
-    Registers registers{};
-    seed_inputs(registers, inputs);
-
+Rgba run_pixel_registers(const Program& program, Registers registers, const ChannelSet* channels,
+                         const RunLimits& limits) {
     Rgba color{0, 0, 0, 255};
     int pc = 0;
     int steps = 0;
@@ -185,8 +200,8 @@ Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimit
                          pack_byte(value(3))};
             break;
         case Op::Tex: {
-            const Rgba sample =
-                sample_channel(inputs.channels, static_cast<int>(value(4)), value(5), value(6));
+            const Rgba sample = sample_channel(channels, static_cast<int>(value(4)), value(5),
+                                               value(6));
             dst(0) = byte_to_unorm(sample.r);
             dst(1) = byte_to_unorm(sample.g);
             dst(2) = byte_to_unorm(sample.b);
@@ -201,32 +216,55 @@ Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimit
     return color;
 }
 
+} // namespace
+
+Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits) {
+    Registers registers{};
+    seed_inputs(registers, inputs);
+    return run_pixel_registers(program, registers, inputs.channels, limits);
+}
+
 void render_frame(const Program& program, const FrameInputs& inputs,
                   std::vector<std::uint32_t>& pixels, const RunLimits& limits) {
     pixels.resize(static_cast<std::size_t>(inputs.width * inputs.height));
-    for (int y = 0; y < inputs.height; ++y) {
-        for (int x = 0; x < inputs.width; ++x) {
-            PixelInputs pixel;
-            pixel.x = x;
-            pixel.y = y;
-            pixel.width = inputs.width;
-            pixel.height = inputs.height;
-            pixel.time = inputs.time;
-            pixel.time_delta = inputs.time_delta;
-            pixel.frame = inputs.frame;
-            pixel.mouse_x = inputs.mouse_x;
-            pixel.mouse_y = inputs.mouse_y;
-            pixel.mouse_down = inputs.mouse_down;
-            pixel.mouse_click_x = inputs.mouse_click_x;
-            pixel.mouse_click_y = inputs.mouse_click_y;
-            pixel.wall_clock_seconds = inputs.wall_clock_seconds;
-            pixel.year = inputs.year;
-            pixel.month = inputs.month;
-            pixel.day = inputs.day;
-            pixel.channels = inputs.channels;
-            pixels[static_cast<std::size_t>(y * inputs.width + x)] =
-                pack_rgba(run_pixel(program, pixel, limits));
+    Registers base_registers{};
+    seed_frame_inputs(base_registers, inputs);
+
+    const int total_pixels = inputs.width * inputs.height;
+    const unsigned int hardware_threads = std::thread::hardware_concurrency();
+    const int worker_count =
+        total_pixels >= 65536
+            ? std::max(1, std::min(inputs.height, static_cast<int>(hardware_threads)))
+            : 1;
+
+    auto render_rows = [&](int begin_y, int end_y) {
+        for (int y = begin_y; y < end_y; ++y) {
+            for (int x = 0; x < inputs.width; ++x) {
+                Registers registers = base_registers;
+                registers[0] = static_cast<float>(x);
+                registers[1] = static_cast<float>(y);
+                pixels[static_cast<std::size_t>(y * inputs.width + x)] =
+                    pack_rgba(run_pixel_registers(program, registers, inputs.channels, limits));
+            }
         }
+    };
+
+    if (worker_count == 1) {
+        render_rows(0, inputs.height);
+        return;
+    }
+
+    std::vector<std::thread> workers;
+    workers.reserve(static_cast<std::size_t>(worker_count - 1));
+    for (int worker = 1; worker < worker_count; ++worker) {
+        const int begin_y = (inputs.height * worker) / worker_count;
+        const int end_y = (inputs.height * (worker + 1)) / worker_count;
+        workers.emplace_back(render_rows, begin_y, end_y);
+    }
+
+    render_rows(0, inputs.height / worker_count);
+    for (std::thread& worker : workers) {
+        worker.join();
     }
 }
 

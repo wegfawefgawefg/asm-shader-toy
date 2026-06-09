@@ -27,6 +27,7 @@ Folders:
 - `input/`: mouse-driven examples.
 - `textures/`: static image channel examples.
 - `multifile/`: local include project examples.
+- `perf/`: intentionally heavy benchmark shaders.
 - `raymarch/`: sphere/planet-style visuals.
 - `common/`: local includes for examples.
 - `assets/`: image assets, plus a future video fixture.
