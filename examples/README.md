@@ -17,9 +17,9 @@ Run from the repository root after building:
   --size gba \
   --scale 4
 ./build/asm-shader-toy examples/video/video_channel.asm \
-  --video0 examples/assets/video/testsrc_160x90.mp4 \
-  --size 160x90 \
-  --scale 4
+  --video0 examples/assets/video/big_buck_bunny_640x360.mp4 \
+  --size 320x180 \
+  --scale 2
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.
@@ -39,7 +39,7 @@ Folders:
 - `perf/`: intentionally heavy benchmark shaders.
 - `raymarch/`: sphere/planet-style visuals.
 - `common/`: local includes for examples.
-- `assets/`: image assets, plus a tiny video fixture.
+- `assets/`: image assets plus generated and Big Buck Bunny video fixtures.
 - `video/`: video-channel example and notes.
 
 Validate without opening windows:

@@ -1,9 +1,9 @@
 ; Video-channel example.
 ; Run with:
 ; ./build/asm-shader-toy examples/video/video_channel.asm \
-;   --video0 examples/assets/video/testsrc_160x90.mp4 \
-;   --size 160x90 \
-;   --scale 4
+;   --video0 examples/assets/video/big_buck_bunny_640x360.mp4 \
+;   --size 320x180 \
+;   --scale 2
 
 .include <std/screen.inc>
 
