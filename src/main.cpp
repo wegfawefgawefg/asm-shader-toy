@@ -8,7 +8,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -162,7 +164,8 @@ void print_usage() {
               << "       --channel0 path through --channel3 path load image inputs\n"
               << "       --dry-run assembles and validates image inputs without rendering\n"
               << "       --no-graphics --frames N renders N CPU frames without a window\n"
-              << "       --save-frame path.png renders one headless frame to a PNG\n";
+              << "       --save-frame path.png renders one headless frame to a PNG\n"
+              << "       graphical runs hot reload the program and its includes on save\n";
 }
 
 bool has_channel_paths(const Args& args) {
@@ -255,6 +258,42 @@ ast::FrameInputs make_frame_inputs(const Args& args, const ast::ChannelSet& chan
     return frame_inputs;
 }
 
+using FileWriteTimes =
+    std::map<std::filesystem::path, std::optional<std::filesystem::file_time_type>>;
+
+std::optional<std::filesystem::file_time_type> file_write_time(const std::filesystem::path& path) {
+    std::error_code error;
+    const auto time = std::filesystem::last_write_time(path, error);
+    if (error) {
+        return std::nullopt;
+    }
+    return time;
+}
+
+FileWriteTimes snapshot_dependencies(const std::vector<std::filesystem::path>& dependencies) {
+    FileWriteTimes snapshot;
+    for (const std::filesystem::path& dependency : dependencies) {
+        snapshot[dependency] = file_write_time(dependency);
+    }
+    return snapshot;
+}
+
+bool dependencies_changed(const FileWriteTimes& snapshot) {
+    for (const auto& [path, previous_time] : snapshot) {
+        if (file_write_time(path) != previous_time) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void print_diagnostics(const std::vector<ast::Diagnostic>& diagnostics) {
+    for (const ast::Diagnostic& diagnostic : diagnostics) {
+        std::cerr << diagnostic.file << ":" << diagnostic.line << ": " << diagnostic.message
+                  << '\n';
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -267,10 +306,7 @@ int main(int argc, char** argv) {
 
     ast::AssembleResult assembled = ast::assemble_file(args.program_path);
     if (!assembled.ok()) {
-        for (const ast::Diagnostic& diagnostic : assembled.diagnostics) {
-            std::cerr << diagnostic.file << ":" << diagnostic.line << ": " << diagnostic.message
-                      << '\n';
-        }
+        print_diagnostics(assembled.diagnostics);
         return 1;
     }
 
@@ -383,6 +419,8 @@ int main(int argc, char** argv) {
     std::vector<std::uint32_t> pixels;
     const auto start = std::chrono::steady_clock::now();
     auto previous_frame_time = start;
+    auto previous_reload_check = start;
+    FileWriteTimes dependency_snapshot = snapshot_dependencies(assembled.dependencies);
     int frame = 0;
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
@@ -419,6 +457,21 @@ int main(int argc, char** argv) {
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
         previous_frame_time = now;
+
+        if (now - previous_reload_check >= std::chrono::milliseconds{250}) {
+            previous_reload_check = now;
+            if (dependencies_changed(dependency_snapshot)) {
+                ast::AssembleResult reloaded = ast::assemble_file(args.program_path);
+                if (reloaded.ok()) {
+                    assembled = std::move(reloaded);
+                    dependency_snapshot = snapshot_dependencies(assembled.dependencies);
+                    std::cout << "hot reloaded " << args.program_path << '\n';
+                } else {
+                    print_diagnostics(reloaded.diagnostics);
+                    dependency_snapshot = snapshot_dependencies(reloaded.dependencies);
+                }
+            }
+        }
 
         const ast::FrameInputs frame_inputs =
             make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,

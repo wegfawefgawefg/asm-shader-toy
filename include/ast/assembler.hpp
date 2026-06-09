@@ -66,6 +66,7 @@ struct Diagnostic {
 struct AssembleResult {
     Program program;
     std::vector<Diagnostic> diagnostics;
+    std::vector<std::filesystem::path> dependencies;
 
     [[nodiscard]] bool ok() const {
         return diagnostics.empty();

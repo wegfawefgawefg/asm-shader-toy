@@ -36,6 +36,7 @@ struct ParseState {
     std::map<std::string, Alias> aliases;
     std::vector<Diagnostic> diagnostics;
     std::set<std::filesystem::path> include_stack;
+    std::vector<std::filesystem::path> dependencies;
 };
 
 std::string trim(std::string_view text) {
@@ -197,6 +198,7 @@ void parse_include(ParseState& state, const std::string& token, const std::strin
         return;
     }
 
+    state.dependencies.push_back(canonical);
     std::ifstream input(canonical);
     if (!input) {
         add_diag(state, file, line, "could not open include: " + canonical.string());
@@ -469,6 +471,7 @@ AssembleResult assemble_source(std::string source, std::string file_name) {
     AssembleResult result;
     result.program = lower_program(state);
     result.diagnostics = std::move(state.diagnostics);
+    result.dependencies = std::move(state.dependencies);
     return result;
 }
 
@@ -480,9 +483,11 @@ AssembleResult assemble_file(const std::filesystem::path& path) {
     std::ifstream input(canonical);
     if (!input) {
         return AssembleResult{Program{},
-                              {Diagnostic{canonical.string(), 0, "could not open file"}}};
+                              {Diagnostic{canonical.string(), 0, "could not open file"}},
+                              {canonical}};
     }
 
+    state.dependencies.push_back(canonical);
     std::ostringstream buffer;
     buffer << input.rdbuf();
     state.include_stack.insert(canonical);
@@ -491,6 +496,7 @@ AssembleResult assemble_file(const std::filesystem::path& path) {
     AssembleResult result;
     result.program = lower_program(state);
     result.diagnostics = std::move(state.diagnostics);
+    result.dependencies = std::move(state.dependencies);
     return result;
 }
 

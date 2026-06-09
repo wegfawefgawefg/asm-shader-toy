@@ -32,6 +32,10 @@ Or run a specific program:
 ./build/asm-shader-toy examples/basics/plasma.asm --size 240x160 --dimscale 4
 ```
 
+Graphical runs hot reload the active program and any `.include` dependencies
+when they are saved. If a reload has assembly errors, diagnostics are printed
+and the last good program keeps running.
+
 Image inputs can be loaded into channels:
 
 ```sh

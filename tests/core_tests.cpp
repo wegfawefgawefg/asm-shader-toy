@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -150,6 +151,32 @@ void test_texture_sampling() {
             "texture sampler reads channel pixels");
 }
 
+void test_file_dependencies_include_main_and_includes() {
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path include_path = dir / "colors.inc";
+    const std::filesystem::path main_path = dir / "main.asm";
+
+    {
+        std::ofstream include_file(include_path);
+        include_file << ".const red 1.0\n";
+    }
+    {
+        std::ofstream main_file(main_path);
+        main_file << ".include \"colors.inc\"\n"
+                  << "out red, 0.0, 0.0, 1.0\n";
+    }
+
+    const ast::AssembleResult result = ast::assemble_file(main_path);
+    require(result.ok(), "file with local include assembles");
+    require(result.dependencies.size() == 2, "main file and include are dependencies");
+    require(result.dependencies[0] == std::filesystem::weakly_canonical(main_path),
+            "main file is first dependency");
+    require(result.dependencies[1] == std::filesystem::weakly_canonical(include_path),
+            "local include is tracked as dependency");
+}
+
 void test_example_assembles() {
     if (!std::filesystem::exists("examples")) {
         return;
@@ -190,6 +217,7 @@ int main() {
     test_high_register_aliases_are_allowed();
     test_input_aliases_are_read_only();
     test_texture_sampling();
+    test_file_dependencies_include_main_and_includes();
     test_example_assembles();
     test_diagnostics();
     return 0;

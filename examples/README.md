@@ -14,6 +14,9 @@ Run from the repository root after building:
   --channel1 examples/assets/bars.png
 ```
 
+Windowed examples hot reload the main file and any `.include` files on save.
+Headless `--dry-run`, `--no-graphics`, and `--save-frame` runs do not watch.
+
 Folders:
 
 - `basics/`: time and simple procedural color.
