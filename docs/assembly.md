@@ -36,6 +36,25 @@ Constants are file-global after parsing.
 mul r8, r2, tau
 ```
 
+Assembler-time constant blocks run a small compile-time program and export
+assigned slots as constants:
+
+```asm
+.consts
+    mov pi, 3.14159265
+    add tau, pi, pi
+    mul half_tau, tau, 0.5
+.end
+
+mul tmp0, time, tau
+```
+
+Inside `.consts`, destination names are compile-time slots, not runtime
+registers. Runtime inputs such as `px`, `time`, and `width` are unavailable.
+Every opcode that does not require runtime state is allowed, including math,
+branches, local labels, `call`, `ret`, and `halt`. Runtime-only operations
+`tex`, `texel`, `out`, and `out8` are rejected.
+
 ## Aliases
 
 Built-in input aliases can be used as source operands:

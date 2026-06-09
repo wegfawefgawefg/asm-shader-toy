@@ -1,5 +1,7 @@
 #include "ast/assembler.hpp"
 
+#include "ast/vm_executor.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -31,6 +33,21 @@ struct Alias {
     bool protected_name = false;
 };
 
+struct ConstBlock {
+    std::vector<RawInstruction> raw;
+    std::map<std::string, int> labels;
+    std::string current_global_label;
+    int start_line = 0;
+};
+
+struct ConstProgram {
+    Program program;
+    std::vector<std::string> slot_names;
+    std::vector<float> slot_values;
+    std::vector<bool> assigned;
+    std::map<std::string, int> slots;
+};
+
 struct ParseState {
     std::vector<RawInstruction> raw;
     std::map<std::string, int> labels;
@@ -44,6 +61,12 @@ struct ParseState {
 };
 
 void add_diag(ParseState& state, const std::string& file, int line, std::string message);
+std::optional<Op> parse_op(std::string_view op);
+int expected_operands(Op op);
+bool operand_must_be_register(Op op, int index);
+bool operand_must_be_label(Op op, int index);
+std::string resolve_label_token(const RawInstruction& raw, const std::string& token);
+void execute_const_block(ParseState& state, const ConstBlock& block, const std::string& file);
 
 std::string trim(std::string_view text) {
     std::size_t first = 0;
@@ -82,6 +105,21 @@ std::string scoped_label_name(ParseState& state, const std::string& label, const
     }
 
     return state.current_global_label + label;
+}
+
+std::string scoped_const_label_name(ParseState& state, ConstBlock& block, const std::string& label,
+                                    const std::string& file, int line) {
+    if (!is_local_label(label)) {
+        block.current_global_label = label;
+        return label;
+    }
+
+    if (block.current_global_label.empty()) {
+        add_diag(state, file, line, "local label requires a preceding global label: " + label);
+        return {};
+    }
+
+    return block.current_global_label + label;
 }
 
 std::string strip_comment(std::string line) {
@@ -246,6 +284,64 @@ void parse_include(ParseState& state, const std::string& token, const std::strin
     state.include_stack.erase(canonical);
 }
 
+void parse_const_block(ParseState& state, std::istringstream& stream, int& line_no,
+                       const std::string& file) {
+    ConstBlock block;
+    block.start_line = line_no;
+    std::string line;
+
+    while (std::getline(stream, line)) {
+        ++line_no;
+        line = trim(strip_comment(line));
+        if (line.empty()) {
+            continue;
+        }
+
+        const std::vector<std::string> tokens = split_tokens(line);
+        if (!tokens.empty() && lower(tokens[0]) == ".end") {
+            if (tokens.size() != 1) {
+                add_diag(state, file, line_no, ".end expects no operands");
+                return;
+            }
+            execute_const_block(state, block, file);
+            return;
+        }
+
+        if (line.back() == ':') {
+            const std::string parsed_label =
+                lower(trim(std::string_view{line}.substr(0, line.size() - 1)));
+            if (parsed_label.empty()) {
+                add_diag(state, file, line_no, "empty label");
+                continue;
+            }
+            const std::string label =
+                scoped_const_label_name(state, block, parsed_label, file, line_no);
+            if (label.empty()) {
+                continue;
+            }
+            block.labels[label] = static_cast<int>(block.raw.size());
+            continue;
+        }
+
+        if (!tokens.empty() && lower(tokens[0]) == ".consts") {
+            add_diag(state, file, line_no, "nested .consts blocks are not supported");
+            continue;
+        }
+
+        RawInstruction raw;
+        raw.op = lower(tokens[0]);
+        raw.line = line_no;
+        raw.file = file;
+        raw.label_scope = block.current_global_label;
+        for (std::size_t i = 1; i < tokens.size(); ++i) {
+            raw.args.push_back(lower(tokens[i]));
+        }
+        block.raw.push_back(std::move(raw));
+    }
+
+    add_diag(state, file, block.start_line, ".consts missing .end");
+}
+
 void parse_source(ParseState& state, const std::string& source, const std::string& file,
                   const std::filesystem::path& base_dir, bool protect_new_aliases) {
     std::istringstream stream(source);
@@ -280,6 +376,20 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
         }
 
         const std::string directive = lower(tokens[0]);
+        if (directive == ".consts") {
+            if (tokens.size() != 1) {
+                add_diag(state, file, line_no, ".consts expects no operands");
+                continue;
+            }
+            parse_const_block(state, stream, line_no, file);
+            continue;
+        }
+
+        if (directive == ".end") {
+            add_diag(state, file, line_no, ".end without .consts");
+            continue;
+        }
+
         if (directive == ".include") {
             if (tokens.size() != 2) {
                 add_diag(state, file, line_no, ".include expects exactly one path");
@@ -547,6 +657,258 @@ std::optional<Operand> parse_operand(ParseState& state, const RawInstruction& ra
 
     add_diag(state, raw.file, raw.line, "invalid operand: " + token);
     return std::nullopt;
+}
+
+bool op_allowed_in_consts(Op op) {
+    switch (op) {
+    case Op::Tex:
+    case Op::Texel:
+    case Op::Out:
+    case Op::Out8:
+        return false;
+    case Op::Mov:
+    case Op::Add:
+    case Op::Sub:
+    case Op::Mul:
+    case Op::Div:
+    case Op::Sin:
+    case Op::Cos:
+    case Op::Sqrt:
+    case Op::Abs:
+    case Op::Floor:
+    case Op::Fract:
+    case Op::Min:
+    case Op::Max:
+    case Op::Mod:
+    case Op::Norm:
+    case Op::Lt:
+    case Op::Gt:
+    case Op::Eq:
+    case Op::Jmp:
+    case Op::Jnz:
+    case Op::Jz:
+    case Op::Jeq:
+    case Op::Jne:
+    case Op::Jlt:
+    case Op::Jle:
+    case Op::Jgt:
+    case Op::Jge:
+    case Op::Call:
+    case Op::Ret:
+    case Op::Halt:
+        return true;
+    }
+    return false;
+}
+
+int const_slot(ConstProgram& program, ParseState& state, const std::string& name) {
+    if (const auto found = program.slots.find(name); found != program.slots.end()) {
+        return found->second;
+    }
+
+    const int index = static_cast<int>(program.slot_names.size());
+    program.slots[name] = index;
+    program.slot_names.push_back(name);
+    if (const auto constant = state.constants.find(name); constant != state.constants.end()) {
+        program.slot_values.push_back(constant->second);
+    } else {
+        program.slot_values.push_back(0.0F);
+    }
+    program.assigned.push_back(false);
+    return index;
+}
+
+bool is_const_slot_destination(Op op, int index) {
+    return operand_must_be_register(op, index);
+}
+
+void predeclare_const_slots(ConstProgram& program, ParseState& state, const ConstBlock& block) {
+    for (const RawInstruction& raw : block.raw) {
+        const auto parsed_op = parse_op(raw.op);
+        if (!parsed_op.has_value() || !op_allowed_in_consts(*parsed_op)) {
+            continue;
+        }
+        const int expected = expected_operands(*parsed_op);
+        if (static_cast<int>(raw.args.size()) != expected) {
+            continue;
+        }
+        for (int i = 0; i < expected; ++i) {
+            if (!is_const_slot_destination(*parsed_op, i)) {
+                continue;
+            }
+            const std::string& token = raw.args[static_cast<std::size_t>(i)];
+            if (parse_float(token).has_value() || parse_register(token).has_value() ||
+                state.aliases.contains(token)) {
+                continue;
+            }
+            const_slot(program, state, token);
+        }
+    }
+}
+
+std::optional<Operand> parse_const_operand(ParseState& state, ConstProgram& const_program,
+                                           const ConstBlock& block, const RawInstruction& raw,
+                                           Op op, int index) {
+    const std::string& token = raw.args[static_cast<std::size_t>(index)];
+
+    if (operand_must_be_label(op, index)) {
+        const std::string label_token = resolve_label_token(raw, token);
+        const auto label = block.labels.find(label_token);
+        if (label == block.labels.end()) {
+            add_diag(state, raw.file, raw.line, "unknown label: " + token);
+            return std::nullopt;
+        }
+        return Operand{OperandKind::Immediate, 0, static_cast<float>(label->second)};
+    }
+
+    if (is_const_slot_destination(op, index)) {
+        if (parse_float(token).has_value()) {
+            add_diag(state, raw.file, raw.line, "const destination must be a name: " + token);
+            return std::nullopt;
+        }
+        if (parse_register(token).has_value()) {
+            add_diag(state, raw.file, raw.line, "registers are not available in .consts: " + token);
+            return std::nullopt;
+        }
+        if (state.aliases.contains(token)) {
+            add_diag(state, raw.file, raw.line,
+                     "runtime alias is not available in .consts: " + token);
+            return std::nullopt;
+        }
+        return Operand{OperandKind::Register, const_slot(const_program, state, token), 0.0F};
+    }
+
+    if (parse_register(token).has_value()) {
+        add_diag(state, raw.file, raw.line, "registers are not available in .consts: " + token);
+        return std::nullopt;
+    }
+
+    if (state.aliases.contains(token)) {
+        add_diag(state, raw.file, raw.line, "runtime alias is not available in .consts: " + token);
+        return std::nullopt;
+    }
+
+    if (const auto slot = const_program.slots.find(token); slot != const_program.slots.end()) {
+        return Operand{OperandKind::Register, slot->second, 0.0F};
+    }
+
+    if (const auto constant = state.constants.find(token); constant != state.constants.end()) {
+        return Operand{OperandKind::Immediate, 0, constant->second};
+    }
+
+    if (const auto value = parse_float(token); value.has_value()) {
+        return Operand{OperandKind::Immediate, 0, *value};
+    }
+
+    add_diag(state, raw.file, raw.line, "invalid const operand: " + token);
+    return std::nullopt;
+}
+
+ConstProgram lower_const_program(ParseState& state, const ConstBlock& block) {
+    ConstProgram const_program;
+    predeclare_const_slots(const_program, state, block);
+
+    for (const RawInstruction& raw : block.raw) {
+        const auto parsed_op = parse_op(raw.op);
+        if (!parsed_op.has_value()) {
+            add_diag(state, raw.file, raw.line, "unknown instruction in .consts: " + raw.op);
+            continue;
+        }
+
+        const Op op = *parsed_op;
+        if (!op_allowed_in_consts(op)) {
+            add_diag(state, raw.file, raw.line,
+                     "runtime-only instruction is not available in .consts: " + raw.op);
+            continue;
+        }
+
+        const int expected = expected_operands(op);
+        if (static_cast<int>(raw.args.size()) != expected) {
+            add_diag(state, raw.file, raw.line,
+                     raw.op + " expects " + std::to_string(expected) + " operands");
+            continue;
+        }
+
+        Instruction instruction;
+        instruction.op = op;
+        instruction.operand_count = expected;
+        instruction.line = raw.line;
+        instruction.file = raw.file;
+
+        bool failed = false;
+        for (int i = 0; i < expected; ++i) {
+            const auto operand = parse_const_operand(state, const_program, block, raw, op, i);
+            if (!operand.has_value()) {
+                failed = true;
+                break;
+            }
+            instruction.operands[static_cast<std::size_t>(i)] = *operand;
+        }
+        if (!failed) {
+            const_program.program.code.push_back(std::move(instruction));
+        }
+    }
+
+    return const_program;
+}
+
+struct ConstEnv {
+    std::vector<float>& slots;
+    std::vector<bool>& assigned;
+
+    [[nodiscard]] float read(const Operand& operand) const {
+        if (operand.kind == OperandKind::Register) {
+            return slots[static_cast<std::size_t>(operand.reg)];
+        }
+        return operand.value;
+    }
+
+    void write(const Operand& operand, float value) {
+        slots[static_cast<std::size_t>(operand.reg)] = value;
+        assigned[static_cast<std::size_t>(operand.reg)] = true;
+    }
+
+    void output_unorm(float, float, float, float) {
+    }
+    void output_byte(float, float, float, float) {
+    }
+
+    [[nodiscard]] Rgba sample_channel(int, float, float) const {
+        return Rgba{};
+    }
+
+    [[nodiscard]] Rgba sample_channel_texel(int, int, int) const {
+        return Rgba{};
+    }
+};
+
+void execute_const_block(ParseState& state, const ConstBlock& block, const std::string& file) {
+    const std::size_t diagnostic_count = state.diagnostics.size();
+    ConstProgram const_program = lower_const_program(state, block);
+    if (state.diagnostics.size() != diagnostic_count) {
+        return;
+    }
+
+    ConstEnv env{const_program.slot_values, const_program.assigned};
+    const detail::StopReason stop =
+        detail::execute_program(const_program.program, env, RunLimits{});
+    switch (stop) {
+    case detail::StopReason::Halted:
+    case detail::StopReason::PcOutOfRange:
+        break;
+    case detail::StopReason::MaxSteps:
+        add_diag(state, file, block.start_line, ".consts exceeded max steps");
+        return;
+    case detail::StopReason::CallDepthExceeded:
+        add_diag(state, file, block.start_line, ".consts exceeded max call depth");
+        return;
+    }
+
+    for (std::size_t i = 0; i < const_program.slot_names.size(); ++i) {
+        if (const_program.assigned[i]) {
+            state.constants[const_program.slot_names[i]] = const_program.slot_values[i];
+        }
+    }
 }
 
 Program lower_program(ParseState& state) {

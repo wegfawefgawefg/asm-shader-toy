@@ -7,6 +7,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 
 cd "${repo_root}"
 
+./build/asm-shader-toy examples/basics/consts.asm --dry-run
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/subroutines.asm --dry-run
 ./build/asm-shader-toy examples/basics/time_pulse.asm --dry-run
@@ -30,6 +31,7 @@ cd "${repo_root}"
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --dry-run
 
+./build/asm-shader-toy examples/basics/consts.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/subroutines.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/time_pulse.asm --no-graphics --frames 2

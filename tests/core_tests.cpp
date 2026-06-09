@@ -50,6 +50,96 @@ void test_labels_and_constants() {
     require(bright.r == 255 && bright.g == 32 && bright.b == 16, "true branch runs");
 }
 
+void test_const_block_math_exports_constants() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+            mov pi, 3.14159265
+            add tau, pi, pi
+            mul half_tau, tau, 0.5
+            div inv_255, 1.0, 255.0
+        .end
+
+        mul r16, half_tau, inv_255
+        out half_tau, tau, r16, 1.0
+    )");
+
+    require(result.ok(), ".consts math program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 255, ".consts exports half_tau");
+    require(color.g == 255, ".consts exports tau");
+    require(color.b == 3, ".consts exported constants can combine at runtime");
+}
+
+void test_const_block_can_use_previous_constants() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .const base 10
+        .consts
+            add bigger, base, 5
+        .end
+        out8 bigger, 0, 0, 255
+    )");
+
+    require(result.ok(), ".consts can read previous constants");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 15, ".consts reads previous constants");
+}
+
+void test_const_block_branches_local_labels_and_calls() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+        main:
+            mov i, 0
+            mov acc, 0
+        .loop:
+            add acc, acc, 0.25
+            add i, i, 1
+            jlt i, 4, .loop
+            call scale
+            halt
+        scale:
+            mul one_twenty_eight, acc, 128
+            ret
+        .end
+
+        out8 one_twenty_eight, 0, 0, 255
+    )");
+
+    require(result.ok(), ".consts control flow program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 128, ".consts supports branches, local labels, and calls");
+}
+
+void test_const_block_rejects_runtime_aliases() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+            mov bad, time
+        .end
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), ".consts rejects runtime aliases");
+}
+
+void test_const_block_rejects_runtime_only_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+            out 1.0, 0.0, 0.0, 1.0
+        .end
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), ".consts rejects runtime output ops");
+}
+
+void test_const_block_max_steps_reports_error() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+        loop:
+            jmp loop
+        .end
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), ".consts max-step failures are diagnostics");
+}
+
 void test_subroutine_call_ret_and_halt() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         mov r16, 40
@@ -387,6 +477,7 @@ void test_example_assembles() {
     }
 
     const char* examples[] = {
+        "examples/basics/consts.asm",
         "examples/basics/plasma.asm",
         "examples/basics/subroutines.asm",
         "examples/basics/time_pulse.asm",
@@ -420,6 +511,12 @@ void test_diagnostics() {
 int main() {
     test_basic_output();
     test_labels_and_constants();
+    test_const_block_math_exports_constants();
+    test_const_block_can_use_previous_constants();
+    test_const_block_branches_local_labels_and_calls();
+    test_const_block_rejects_runtime_aliases();
+    test_const_block_rejects_runtime_only_ops();
+    test_const_block_max_steps_reports_error();
     test_subroutine_call_ret_and_halt();
     test_ret_without_call_still_halts();
     test_local_labels_are_scoped_to_global_labels();

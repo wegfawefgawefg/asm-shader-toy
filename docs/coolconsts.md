@@ -1,8 +1,7 @@
 # Cool Consts
 
-This document sketches `.consts ... .end` as assembler-time asm. The goal is to
-make constants feel like assembly instead of adding a separate infix expression
-language.
+`.consts ... .end` is assembler-time asm. The goal is to make constants feel
+like assembly instead of adding a separate infix expression language.
 
 ## Shape
 
@@ -31,17 +30,15 @@ immediate constant.
 - The assembler applies max-step and max-call-depth limits.
 - After `.end`, assigned slots are exported into the broader constant table.
 
-## Implementation Goal
+## Implementation
 
 Do not double-implement the VM.
 
-Opcode behavior should live in one shared executor shape. The runtime path and
-const path can have different operand resolution and environments, but math,
-comparison, branch, call, return, and halt semantics should not be copied into a
-second switch.
+Opcode behavior lives in one shared executor shape. The runtime path and const
+path have different operand resolution and environments, but math, comparison,
+branch, call, return, and halt semantics are not copied into a second switch.
 
-The runtime render path should stay fast. A reasonable implementation is a
-templated executor or similarly inlineable adapter:
+The runtime render path stays direct by using an inlineable templated executor:
 
 ```cpp
 execute_program<RuntimeEnv>(program, runtime_env, limits);
@@ -97,10 +94,10 @@ separate deliberate design, not an accidental consequence of `.consts`.
 
 ## Parsing And Lowering
 
-`.consts ... .end` should parse as a separate compile-time program.
+`.consts ... .end` parses as a separate compile-time program.
 
-Labels and local labels inside the block should belong to that block and should
-not collide with runtime labels. The block can reuse normal instruction syntax:
+Labels and local labels inside the block belong to that block and do not collide
+with runtime labels. The block reuses normal instruction syntax:
 
 ```asm
 .consts
@@ -116,10 +113,9 @@ start:
 .end
 ```
 
-Operand lowering can either reuse `Instruction` with a new const-slot operand
-kind, or use a separate const operand type if that keeps the runtime instruction
-representation tighter. The important constraint is that opcode semantics stay
-shared.
+Operand lowering reuses `Instruction` and stores const slots in register-shaped
+operands for the const environment. Runtime instruction representation stays
+tight, and opcode semantics stay shared.
 
 ## Execution
 
@@ -146,4 +142,3 @@ Useful tests:
 - Runtime aliases such as `time` are rejected in `.consts`.
 - Runtime-only ops `tex`, `texel`, `out`, and `out8` are rejected in `.consts`.
 - Max-step limits prevent infinite compile-time loops.
-

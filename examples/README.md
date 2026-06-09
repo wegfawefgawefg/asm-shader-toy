@@ -3,6 +3,7 @@
 Run from the repository root after building:
 
 ```sh
+./build/asm-shader-toy examples/basics/consts.asm
 ./build/asm-shader-toy examples/basics/time_pulse.asm
 ./build/asm-shader-toy examples/basics/subroutines.asm
 ./build/asm-shader-toy examples/input/mouse_rings.asm

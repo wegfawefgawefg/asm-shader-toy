@@ -29,11 +29,11 @@ worth serious consideration. The intent is to pick through these one by one.
    `.done`. This would make includes and helper blocks easier to write without
    inventing globally unique label names everywhere.
 
-5. Constant expressions.
+5. Assembler-time const blocks. Done.
 
-   Let `.const` evaluate simple arithmetic expressions, for example
-   `TAU = PI * 2`. Useful operators would be `+`, `-`, `*`, `/`, parentheses,
-   and references to earlier constants.
+   `.consts ... .end` runs compile-time asm in a const environment and exports
+   assigned slots as constants. It reuses the shared opcode executor for all
+   non-runtime ops instead of adding an infix expression language.
 
 6. Channel dimensions.
 
