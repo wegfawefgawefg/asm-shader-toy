@@ -160,6 +160,7 @@ jnz test, label
 out r, g, b, a      ; normalized 0..1 channels
 out8 r, g, b, a     ; byte 0..255 channels
 tex dr, dg, db, da, channel, u, v
+texel dr, dg, db, da, channel, x, y
 ret
 ```
 
@@ -170,6 +171,9 @@ after writing a color.
 `--channel3` or produced by `--buffer0` through `--buffer3`. Coordinates are
 normalized `0..1`, clamped, nearest-neighbor, and returned as normalized float
 channels in the four destination registers.
+
+`texel` samples one of the same channels using pixel coordinates. Out-of-bounds
+coordinates return transparent black instead of clamping.
 
 ## Feedback Buffers
 

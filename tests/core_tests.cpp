@@ -151,6 +151,51 @@ void test_texture_sampling() {
             "texture sampler reads channel pixels");
 }
 
+void test_texel_sampling() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        texel r16, r17, r18, r19, 0, 1, 0
+        out r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "texel program assembles");
+
+    ast::ChannelSet channels;
+    channels.image[0].width = 2;
+    channels.image[0].height = 2;
+    channels.image[0].pixels = {
+        0xFF0000FFU,
+        0xFF00FF00U,
+        0xFFFF0000U,
+        0xFFFFFFFFU,
+    };
+
+    ast::PixelInputs inputs;
+    inputs.channels = &channels;
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    require(color.r == 0 && color.g == 255 && color.b == 0 && color.a == 255,
+            "texel sampler reads exact channel pixels");
+}
+
+void test_texel_out_of_bounds_is_black() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        texel r16, r17, r18, r19, 0, -1, 0
+        out r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "out-of-bounds texel program assembles");
+
+    ast::ChannelSet channels;
+    channels.image[0].width = 1;
+    channels.image[0].height = 1;
+    channels.image[0].pixels = {0xFFFFFFFFU};
+
+    ast::PixelInputs inputs;
+    inputs.channels = &channels;
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    require(color.r == 0 && color.g == 0 && color.b == 0 && color.a == 0,
+            "out-of-bounds texel samples transparent black");
+}
+
 void test_file_dependencies_include_main_and_includes() {
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
@@ -185,6 +230,8 @@ void test_example_assembles() {
     const char* examples[] = {
         "examples/basics/plasma.asm",
         "examples/basics/time_pulse.asm",
+        "examples/buffers/life_buffer.asm",
+        "examples/buffers/life_display.asm",
         "examples/input/mouse_rings.asm",
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
@@ -217,6 +264,8 @@ int main() {
     test_high_register_aliases_are_allowed();
     test_input_aliases_are_read_only();
     test_texture_sampling();
+    test_texel_sampling();
+    test_texel_out_of_bounds_is_black();
     test_file_dependencies_include_main_and_includes();
     test_example_assembles();
     test_diagnostics();

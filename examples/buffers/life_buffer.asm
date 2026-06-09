@@ -1,10 +1,9 @@
 .include <std/aliases.inc>
 
-; Conway-style feedback buffer.
-; Channel 0 is the previous frame of this buffer.
+; Conway's Game of Life feedback buffer.
+; Channel 0 is the previous frame of this buffer. Cells outside the image are
+; dead.
 
-.alias inv_w, r48
-.alias inv_h, r49
 .alias sum, r50
 .alias alive, r51
 .alias born, r52
@@ -18,65 +17,61 @@
 .alias rand_alive, r60
 .alias sample_alive, r61
 
-norm uv_x, px, width
-norm uv_y, py, height
-div inv_w, 1.0, width
-div inv_h, 1.0, height
 mov sum, 0.0
 
 ; Top row.
-sub tmp0, uv_x, inv_w
-sub tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+sub tmp0, px, 1.0
+sub tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
-mov tmp0, uv_x
-sub tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+mov tmp0, px
+sub tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
-add tmp0, uv_x, inv_w
-sub tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+add tmp0, px, 1.0
+sub tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
 ; Middle row.
-sub tmp0, uv_x, inv_w
-mov tmp1, uv_y
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+sub tmp0, px, 1.0
+mov tmp1, py
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
-add tmp0, uv_x, inv_w
-mov tmp1, uv_y
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+add tmp0, px, 1.0
+mov tmp1, py
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
 ; Bottom row.
-sub tmp0, uv_x, inv_w
-add tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+sub tmp0, px, 1.0
+add tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
-mov tmp0, uv_x
-add tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+mov tmp0, px
+add tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
-add tmp0, uv_x, inv_w
-add tmp1, uv_y, inv_h
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
+add tmp0, px, 1.0
+add tmp1, py, 1.0
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, tmp1
 gt sample_alive, tex0_r, 0.5
 add sum, sum, sample_alive
 
 ; Center cell rule.
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, px, py
 gt alive, tex0_r, 0.5
 eq born, sum, 3.0
 eq two_neighbors, sum, 2.0

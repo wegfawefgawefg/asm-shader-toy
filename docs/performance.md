@@ -36,9 +36,10 @@ ms_per_frame: 8.38792
 
 These are not accepted until measured against the benchmark matrix above.
 
-- Worker pool redesign: the condition-variable pool tried in O8 regressed the
-  main benchmark and PSP-sized planet render. A future attempt needs lower
-  overhead frame submission before replacing per-frame thread creation.
+- Persistent worker team v2: retry worker pooling only with cheaper per-frame
+  dispatch, fixed per-worker row ranges, padded per-worker state, and a measured
+  fallback. O8's condition-variable pool regressed, so this should stay behind a
+  benchmark gate.
 - Predecoded fast instruction format: lower each instruction into fixed source
   register/immediate fields so the VM does less `OperandKind` branching in the
   inner loop.

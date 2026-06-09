@@ -63,6 +63,20 @@ Rgba sample_channel(const ChannelSet* channels, int channel_index, float u, floa
     return unpack_rgba(channel.pixel_data()[static_cast<std::size_t>(y * channel.width + x)]);
 }
 
+Rgba sample_channel_texel(const ChannelSet* channels, int channel_index, int x, int y) {
+    if (channels == nullptr || channel_index < 0 ||
+        channel_index >= static_cast<int>(channels->image.size())) {
+        return Rgba{0, 0, 0, 0};
+    }
+
+    const ImageChannel& channel = channels->image[static_cast<std::size_t>(channel_index)];
+    if (!channel.loaded() || x < 0 || y < 0 || x >= channel.width || y >= channel.height) {
+        return Rgba{0, 0, 0, 0};
+    }
+
+    return unpack_rgba(channel.pixel_data()[static_cast<std::size_t>(y * channel.width + x)]);
+}
+
 float byte_to_unorm(std::uint8_t value) {
     return static_cast<float>(value) / 255.0F;
 }
@@ -202,6 +216,16 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
         case Op::Tex: {
             const Rgba sample =
                 sample_channel(channels, static_cast<int>(value(4)), value(5), value(6));
+            dst(0) = byte_to_unorm(sample.r);
+            dst(1) = byte_to_unorm(sample.g);
+            dst(2) = byte_to_unorm(sample.b);
+            dst(3) = byte_to_unorm(sample.a);
+            break;
+        }
+        case Op::Texel: {
+            const Rgba sample = sample_channel_texel(channels, static_cast<int>(value(4)),
+                                                     static_cast<int>(std::lround(value(5))),
+                                                     static_cast<int>(std::lround(value(6))));
             dst(0) = byte_to_unorm(sample.r);
             dst(1) = byte_to_unorm(sample.g);
             dst(2) = byte_to_unorm(sample.b);

@@ -33,6 +33,7 @@ enum class Op {
     Out,
     Out8,
     Tex,
+    Texel,
     Ret,
 };
 

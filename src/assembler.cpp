@@ -301,7 +301,8 @@ std::optional<Op> parse_op(std::string_view op) {
         {"abs", Op::Abs}, {"floor", Op::Floor}, {"fract", Op::Fract}, {"min", Op::Min},
         {"max", Op::Max}, {"mod", Op::Mod},     {"norm", Op::Norm},   {"lt", Op::Lt},
         {"gt", Op::Gt},   {"eq", Op::Eq},       {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
-        {"out", Op::Out}, {"out8", Op::Out8},   {"tex", Op::Tex},     {"ret", Op::Ret},
+        {"out", Op::Out}, {"out8", Op::Out8},   {"tex", Op::Tex},     {"texel", Op::Texel},
+        {"ret", Op::Ret},
     };
 
     const auto it = ops.find(op);
@@ -343,6 +344,7 @@ int expected_operands(Op op) {
     case Op::Out8:
         return 4;
     case Op::Tex:
+    case Op::Texel:
         return 7;
     }
     return 0;
@@ -370,6 +372,7 @@ bool operand_must_be_register(Op op, int index) {
     case Op::Eq:
         return index == 0;
     case Op::Tex:
+    case Op::Texel:
         return index >= 0 && index <= 3;
     case Op::Jmp:
     case Op::Jnz:
@@ -483,9 +486,8 @@ AssembleResult assemble_file(const std::filesystem::path& path) {
         std::filesystem::weakly_canonical(path).lexically_normal();
     std::ifstream input(canonical);
     if (!input) {
-        return AssembleResult{Program{},
-                              {Diagnostic{canonical.string(), 0, "could not open file"}},
-                              {canonical}};
+        return AssembleResult{
+            Program{}, {Diagnostic{canonical.string(), 0, "could not open file"}}, {canonical}};
     }
 
     state.dependencies.push_back(canonical);

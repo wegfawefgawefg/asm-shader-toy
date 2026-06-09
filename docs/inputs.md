@@ -81,6 +81,8 @@ Current behavior:
 - clamped edges
 - nearest-neighbor sampling
 - sampled color returns normalized `0..1` RGBA floats
+- `texel` samples direct pixel coordinates and returns transparent black outside
+  the channel bounds
 
 Buffer N renders into channel N before the image pass:
 
