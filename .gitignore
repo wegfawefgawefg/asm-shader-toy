@@ -1,0 +1,15 @@
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+.cache/
+.clangd/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
