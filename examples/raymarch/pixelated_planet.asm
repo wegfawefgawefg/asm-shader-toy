@@ -141,7 +141,7 @@ mov color_b, 0.78
 
 gt tmp3, color_a, 0.54
 jnz tmp3, land
-jmp planet_cloud_overlay
+jmp planet_shell_overlay
 
 land:
 mov color_r, 0.17
@@ -149,16 +149,23 @@ mov color_g, 0.65
 mov color_b, 0.34
 gt tmp3, color_a, 0.73
 jnz tmp3, highland
-jmp planet_cloud_overlay
+jmp planet_shell_overlay
 
 highland:
 mov color_r, 0.58
 mov color_g, 0.72
 mov color_b, 0.55
-jmp planet_cloud_overlay
+jmp planet_shell_overlay
+
+planet_shell_overlay:
+mov tmp2, 1.0
+jmp compute_cloud_shell
 
 cloud_shell_only:
 ; Outside the planet but inside the larger cloud-shell disk.
+mov tmp2, 0.0
+
+compute_cloud_shell:
 div tmp6, tmp0, 1.01
 div tmp8, tmp1, 1.01
 mul tmp7, tmp6, tmp6
@@ -183,92 +190,71 @@ max tmp15, tmp15, 0.0
 
 jmp cloud_noise_outer
 
-planet_cloud_overlay:
-; Same cloud-shell geometry as above, sampled at a larger radius than planet.
-div tmp6, tmp0, 1.01
-div tmp8, tmp1, 1.01
-mul tmp7, tmp6, tmp6
-mul tmp3, tmp8, tmp8
-add tmp7, tmp7, tmp3
-sub tmp7, 1.0, tmp7
-max tmp7, tmp7, 0.0
-sqrt tmp7, tmp7
-
-mul tmp9, time, 0.45
-cos tmp10, tmp9
-sin tmp11, tmp9
-
-cloud_noise:
-; Quantized shell-cell hash. This avoids obvious sine bands in the clouds.
-mul tmp12, tmp6, tmp10
-mul tmp13, tmp7, tmp11
-add tmp12, tmp12, tmp13
-mul tmp13, tmp6, tmp11
-mul tmp14, tmp7, tmp10
-sub tmp14, tmp14, tmp13
-
-mul tmp3, tmp8, 0.7
-add tmp3, tmp3, tmp12
-mul tmp3, tmp3, 14.0
-floor tmp3, tmp3
-mul tmp4, tmp8, -0.35
-add tmp4, tmp4, tmp14
-mul tmp4, tmp4, 14.0
-floor tmp4, tmp4
-mul tmp5, tmp12, 0.4
-mul tmp13, tmp14, 0.8
-add tmp5, tmp5, tmp13
-mul tmp5, tmp5, 8.0
-floor tmp5, tmp5
-
-mul tmp9, tmp3, 12.989
-mul tmp13, tmp4, 78.233
-add tmp9, tmp9, tmp13
-mul tmp13, tmp5, 37.719
-add tmp9, tmp9, tmp13
-mul tmp13, time, 2.0
-floor tmp13, tmp13
-mul tmp13, tmp13, 9.17
-add tmp9, tmp9, tmp13
-sin tmp9, tmp9
-
-gt tmp3, tmp9, 0.68
-jnz tmp3, cloud_candidate
-jmp shade
-
-cloud_candidate:
-gt tmp3, tmp15, 0.32
-jnz tmp3, cloud
-jmp shade
-
 cloud_noise_outer:
-; For the visible limb shell, use screen-mixed cells to avoid contour rings.
-mul tmp3, tmp1, 0.37
+; Project one cloud shell over the full larger sphere, then punch it into
+; sparse cells. Hash inputs are shifted positive before mod so negative
+; screen coordinates do not pass every threshold.
+mul tmp3, tmp1, 0.43
 add tmp3, tmp3, tmp0
-mul tmp3, tmp3, 30.0
+mul tmp3, tmp3, 11.0
 floor tmp3, tmp3
 
-mul tmp4, tmp0, -0.61
+mul tmp4, tmp0, -0.58
 add tmp4, tmp4, tmp1
-mul tmp4, tmp4, 30.0
+mul tmp4, tmp4, 11.0
 floor tmp4, tmp4
 
-mul tmp9, tmp3, 12.989
-mul tmp13, tmp4, 78.233
+mul tmp9, tmp3, 5.0
+mul tmp13, tmp4, 11.0
 add tmp9, tmp9, tmp13
 mul tmp13, time, 2.0
 floor tmp13, tmp13
-mul tmp13, tmp13, 9.17
+mul tmp13, tmp13, 5.0
 add tmp9, tmp9, tmp13
-sin tmp9, tmp9
+add tmp9, tmp9, 4096.0
+mod tmp9, tmp9, 23.0
 
-gt tmp3, tmp9, 0.78
-jnz tmp3, outer_cloud_candidate
+lt tmp5, tmp9, 9.0
+jnz tmp5, outer_cloud_gate2
+jnz tmp2, shade
+jmp stars
+
+outer_cloud_gate2:
+mul tmp9, tmp3, 13.0
+mul tmp13, tmp4, 7.0
+add tmp9, tmp9, tmp13
+add tmp9, tmp9, 4096.0
+mod tmp9, tmp9, 29.0
+lt tmp5, tmp9, 16.0
+jnz tmp5, outer_cloud_gate3
+jnz tmp2, shade
+jmp stars
+
+outer_cloud_gate3:
+mul tmp9, tmp1, 0.21
+add tmp9, tmp9, tmp0
+mul tmp9, tmp9, 32.0
+floor tmp9, tmp9
+
+mul tmp13, tmp0, -0.77
+add tmp13, tmp13, tmp1
+mul tmp13, tmp13, 32.0
+floor tmp13, tmp13
+
+mul tmp9, tmp9, 17.0
+mul tmp13, tmp13, 19.0
+add tmp9, tmp9, tmp13
+add tmp9, tmp9, 4096.0
+mod tmp9, tmp9, 31.0
+gt tmp5, tmp9, 4.0
+jnz tmp5, outer_cloud_candidate
+jnz tmp2, shade
 jmp stars
 
 outer_cloud_candidate:
-gt tmp3, tmp15, 0.50
+gt tmp3, tmp15, 0.24
 jnz tmp3, cloud_raw
+jnz tmp2, shade
 jmp stars
 
 cloud_raw:
@@ -283,19 +269,6 @@ ret
 bright_cloud_raw:
 out 0.92, 0.96, 0.94, 1.0
 ret
-
-cloud:
-mov color_r, 0.52
-mov color_g, 0.56
-mov color_b, 0.64
-gt tmp3, tmp15, 0.62
-jnz tmp3, bright_cloud
-jmp shade
-
-bright_cloud:
-mov color_r, 0.90
-mov color_g, 0.94
-mov color_b, 0.92
 
 shade:
 ; Night side goes purple/blue, day side goes bright.
