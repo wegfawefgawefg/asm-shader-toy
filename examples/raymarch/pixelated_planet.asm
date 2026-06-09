@@ -251,6 +251,15 @@ mul color_g, tmp3, tmp11
 mul tmp13, tmp5, tmp10
 sub tmp13, tmp13, color_g
 
+; Cloud shell lighting uses the shell normal, not the terrain normal.
+mul tmp15, tmp3, 0.55
+mul color_g, tmp4, -0.45
+add tmp15, tmp15, color_g
+mul color_g, tmp5, 0.60
+add tmp15, tmp15, color_g
+add tmp15, tmp15, 0.16
+max tmp15, tmp15, 0.0
+
 add tmp3, color_r, 1.71
 mul tmp3, tmp3, 8.0
 floor tmp5, tmp3
@@ -282,13 +291,26 @@ mod color_r, color_r, 61.0
 div color_r, color_r, 61.0
 
 gt tmp3, color_r, 0.76
-jnz tmp3, cloud_color
+jnz tmp3, cloud_shade
 eq tmp3, tmp2, -1.0
 jnz tmp3, stars
 jmp shade
 
-cloud_color:
-out 0.86, 0.90, 0.84, 1.0
+cloud_shade:
+gt tmp3, tmp15, 0.68
+jnz tmp3, cloud_bright
+gt tmp3, tmp15, 0.28
+jnz tmp3, cloud_mid
+jmp cloud_dark
+
+cloud_dark:
+out 0.30, 0.34, 0.38, 1.0
+ret
+cloud_mid:
+out 0.62, 0.68, 0.68, 1.0
+ret
+cloud_bright:
+out 0.88, 0.92, 0.86, 1.0
 ret
 
 planet_shell_overlay:
