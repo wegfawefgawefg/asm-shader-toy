@@ -18,6 +18,8 @@ Windowed examples hot reload the main file and any `.include` files on save.
 Headless `--dry-run`, `--no-graphics`, and `--save-frame` runs do not watch.
 Pass `--fps` to show a small window overlay, or `--measure-fps N` to render
 `N` CPU frames and print average throughput.
+`--size` accepts `WxH` values plus retro presets such as `gb`, `gba`, `nes`,
+`snes`, `genesis`, `n64`, `ps1`, `ds`, and `psp`.
 
 Folders:
 

@@ -30,6 +30,7 @@ Or run a specific program:
 
 ```sh
 ./build/asm-shader-toy examples/basics/plasma.asm --size 240x160 --dimscale 4
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --size gba --dimscale 4
 ```
 
 Show a small FPS overlay in the window:
@@ -79,6 +80,18 @@ Dedicated multi-file example:
 
 `--scale` and `--dimscale` are aliases. The default `240x160` render uses scale
 `4`; passing `--size` uses scale `1` unless you also pass `--scale`/`--dimscale`.
+`--size` accepts `WxH` or a preset name:
+
+- `gb`, `gameboy`, `gbc`, `gameboycolor`: `160x144`
+- `gba`: `240x160`
+- `nes`: `256x240`
+- `snes`: `256x224`
+- `genesis`, `megadrive`: `320x224`
+- `sms`, `mastersystem`: `256x192`
+- `n64`, `ps1`, `psx`, `spelunky`: `320x240`
+- `ds`, `nds`: `256x192`
+- `psp`: `480x272`
+
 The interpreter always renders the intermediate texture size; SDL handles
 scaling that texture into the window.
 

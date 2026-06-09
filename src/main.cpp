@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -36,7 +37,50 @@ struct Args {
     std::array<std::string, 4> channel_paths;
 };
 
+std::string lower_ascii(std::string_view text) {
+    std::string lowered;
+    lowered.reserve(text.size());
+    for (const char ch : text) {
+        lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    return lowered;
+}
+
+struct SizePreset {
+    std::string_view name;
+    int width = 0;
+    int height = 0;
+};
+
+constexpr std::array<SizePreset, 18> size_presets{{
+    {"gb", 160, 144},
+    {"gameboy", 160, 144},
+    {"gbc", 160, 144},
+    {"gameboycolor", 160, 144},
+    {"gba", 240, 160},
+    {"nes", 256, 240},
+    {"snes", 256, 224},
+    {"genesis", 320, 224},
+    {"megadrive", 320, 224},
+    {"sms", 256, 192},
+    {"mastersystem", 256, 192},
+    {"n64", 320, 240},
+    {"ps1", 320, 240},
+    {"psx", 320, 240},
+    {"ds", 256, 192},
+    {"nds", 256, 192},
+    {"psp", 480, 272},
+    {"spelunky", 320, 240},
+}};
+
 std::optional<std::pair<int, int>> parse_size(std::string_view text) {
+    const std::string lowered = lower_ascii(text);
+    for (const SizePreset& preset : size_presets) {
+        if (lowered == preset.name) {
+            return std::pair{preset.width, preset.height};
+        }
+    }
+
     const std::size_t split = text.find('x');
     if (split == std::string_view::npos) {
         return std::nullopt;
@@ -180,8 +224,9 @@ std::optional<Args> parse_args(int argc, char** argv) {
 }
 
 void print_usage() {
-    std::cerr << "usage: asm-shader-toy [program.asm] [--size 240x160] [--scale N]\n"
+    std::cerr << "usage: asm-shader-toy [program.asm] [--size 240x160|gba|gb|n64|ps1|psp] [--scale N]\n"
               << "       --dimscale is accepted as an alias for --scale\n"
+              << "       --size presets: gb, gbc, gba, nes, snes, genesis, sms, n64, ps1, ds, psp\n"
               << "       --channel0 path through --channel3 path load image inputs\n"
               << "       --dry-run assembles and validates image inputs without rendering\n"
               << "       --no-graphics --frames N renders N CPU frames without a window\n"
