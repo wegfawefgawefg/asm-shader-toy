@@ -12,14 +12,17 @@ examples/assets/video/testsrc_160x90.mp4
 It also includes a more interesting Big Buck Bunny clip:
 
 ```text
-examples/assets/video/big_buck_bunny_640x360.mp4
+examples/assets/video/big_buck_bunny_1min_160x90_24fps.mp4
 ```
 
 Run it with:
 
 ```sh
 ./build/asm-shader-toy examples/video/video_channel.asm \
-  --video0 examples/assets/video/big_buck_bunny_640x360.mp4 \
-  --size 320x180 \
-  --scale 2
+  --video0 examples/assets/video/big_buck_bunny_1min_160x90_24fps.mp4 \
+  --size 160x90 \
+  --scale 4
 ```
+
+Video frames are currently decoded and preloaded at startup. That keeps sampling
+simple, but it is not appropriate for full movies yet.

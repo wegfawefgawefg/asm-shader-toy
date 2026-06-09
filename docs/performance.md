@@ -50,6 +50,9 @@ These are not accepted until measured against the benchmark matrix above.
   This is harder because VM branches can diverge.
 - More representative benchmark mode: benchmark startup/warmup should separate
   steady-state frame cost from setup cost.
+- Streaming video channels: `--videoN` currently preloads all decoded frames,
+  which is fine for short fixtures but inappropriate for long movies. Decode a
+  small ring of frames on demand before encouraging arbitrary user videos.
 - Optimized IR pass: constant folding, dead path cleanup, and tighter bytecode
   packing before interpretation.
 - GPU backend later: compile the asm IR to WGSL/GLSL after the CPU VM/debugger

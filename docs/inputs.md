@@ -96,6 +96,10 @@ Buffer N renders into channel N before the image pass:
 Buffer passes sample the previous frame's buffer contents. The image pass samples
 the current frame's freshly rendered buffer contents.
 
+Video channels currently preload all decoded frames. This is simple and works
+well for short fixtures, but streaming decode is needed before using long movies
+or high-resolution clips.
+
 ## Expansion Plan
 
 Near-term scalar inputs:
@@ -108,6 +112,7 @@ Near-term scalar inputs:
 
 Next channel support:
 
+- streaming video decode instead of preloading all frames
 - linear sampling mode
 - wrap address mode
 - channel metadata registers or query instructions for width, height, time
