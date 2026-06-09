@@ -23,6 +23,7 @@ Folders:
 - `raymarch/`: sphere/planet-style visuals.
 - `common/`: local includes for examples.
 - `assets/`: image assets, plus a future video fixture.
+- `video/`: future video-channel sketch and notes.
 
 Validate without opening windows:
 
@@ -45,6 +46,8 @@ scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 
 The current runner supports static image channels. Webcam, video, audio, and
 Shadertoy-style buffer passes are planned but not implemented yet.
+See `examples/video/README.md` for the included MP4 fixture and future command
+shape.
 
 `raymarch/pixelated_planet.asm` is adapted from the CC0 Godot Shaders post
 "3D Pixelated Planet", which credits the YouTube short as inspiration.

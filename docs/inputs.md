@@ -107,6 +107,15 @@ Later channel support:
 - audio FFT/waveform channel
 - webcam or microphone only if the platform path stays boring
 
+There is already a tiny generated video fixture for that future work:
+
+```text
+examples/assets/video/testsrc_160x90.mp4
+```
+
+See `examples/video/future_video_channel.asm` for the intended shader-side
+shape. It is not runnable until a video channel provider exists.
+
 The important constraint is that channel sampling should stay explicit. A fake
 assembly program should make memory and texture access visible instead of
 pretending it is normal arithmetic.
