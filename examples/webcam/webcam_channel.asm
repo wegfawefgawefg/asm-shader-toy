@@ -7,7 +7,5 @@
 
 .include <std/screen.inc>
 
-; Mirror horizontally for a more natural webcam preview.
-sub tmp0, 1.0, uv_x
-tex tex0_r, tex0_g, tex0_b, tex0_a, 0, tmp0, uv_y
+tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
 out tex0_r, tex0_g, tex0_b, tex0_a

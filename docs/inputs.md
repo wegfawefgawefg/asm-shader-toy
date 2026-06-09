@@ -106,6 +106,8 @@ or high-resolution clips.
 Webcam channels stream `320x240` frames through a nonblocking pipe and reuse the
 latest complete frame when the camera has not produced a newer one. `--webcam0`
 defaults to `/dev/video0`; pass a device path after the flag to override it.
+Webcam channels are mirrored horizontally by default so shaders can sample them
+like normal preview images.
 
 ## Expansion Plan
 

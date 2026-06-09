@@ -512,14 +512,19 @@ void update_video_channels(ast::ChannelSet& channels,
 void pack_webcam_frame(WebcamChannel& webcam) {
     webcam.pixels.resize(static_cast<std::size_t>(webcam.width) *
                          static_cast<std::size_t>(webcam.height));
-    for (std::size_t pixel = 0; pixel < webcam.pixels.size(); ++pixel) {
-        const std::uint8_t r = webcam.pending_frame[pixel * 4U + 0U];
-        const std::uint8_t g = webcam.pending_frame[pixel * 4U + 1U];
-        const std::uint8_t b = webcam.pending_frame[pixel * 4U + 2U];
-        const std::uint8_t a = webcam.pending_frame[pixel * 4U + 3U];
-        webcam.pixels[pixel] =
-            (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
-            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+    for (int y = 0; y < webcam.height; ++y) {
+        for (int x = 0; x < webcam.width; ++x) {
+            const auto src_pixel =
+                static_cast<std::size_t>(y * webcam.width + (webcam.width - 1 - x));
+            const auto dst_pixel = static_cast<std::size_t>(y * webcam.width + x);
+            const std::uint8_t r = webcam.pending_frame[src_pixel * 4U + 0U];
+            const std::uint8_t g = webcam.pending_frame[src_pixel * 4U + 1U];
+            const std::uint8_t b = webcam.pending_frame[src_pixel * 4U + 2U];
+            const std::uint8_t a = webcam.pending_frame[src_pixel * 4U + 3U];
+            webcam.pixels[dst_pixel] =
+                (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+                (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+        }
     }
 }
 

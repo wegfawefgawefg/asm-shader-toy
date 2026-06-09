@@ -1,7 +1,8 @@
 # Webcam Examples
 
 Webcam channels use local `ffmpeg` with Linux V4L2. `--webcam0` defaults to
-`/dev/video0`; `--webcam1` defaults to `/dev/video1`.
+`/dev/video0`; `--webcam1` defaults to `/dev/video1`. Channels are mirrored
+horizontally by default for normal webcam-preview behavior.
 
 Run a mirrored preview:
 
