@@ -23,11 +23,9 @@ mul tmp2, tmp0, tmp0
 mul tmp3, tmp1, tmp1
 add tmp2, tmp2, tmp3
 
-; Real separate geometry: planet disk inside cloud shell disk.
+; Planet disk. Clouds are hidden while terrain noise is being tuned.
 lt tmp4, tmp2, 0.80
 jnz tmp4, planet
-lt tmp4, tmp2, 1.02
-jnz tmp4, cloud_shell_only
 jmp stars
 
 stars:
@@ -103,61 +101,256 @@ mul tmp15, tmp15, 6.0
 floor tmp15, tmp15
 div tmp15, tmp15, 6.0
 
-; Terrain: layered sine-noise on rotated sphere coords.
-mul color_a, tmp12, 8.0
-mul tmp3, tmp8, 5.5
-add color_a, color_a, tmp3
-sin color_a, color_a
-mul color_a, color_a, 0.34
+; Terrain: three octaves of cheap bilinear value noise. It uses mixed
+; sphere-space axes, so continents rotate with the planet without sine rings.
+mov color_a, 0.0
 
-mul tmp3, tmp12, -5.0
-mul tmp4, tmp8, 9.0
+; Octave 1, broad continental masses.
+mul tmp3, tmp12, 0.78
+mul tmp4, tmp8, 0.18
 add tmp3, tmp3, tmp4
-sin tmp3, tmp3
-mul tmp3, tmp3, 0.27
-add color_a, color_a, tmp3
+mul tmp4, tmp14, 0.39
+add tmp3, tmp3, tmp4
+add tmp3, tmp3, 2.0
+mul tmp3, tmp3, 3.0
+floor tmp5, tmp3
+fract tmp3, tmp3
 
-mul tmp3, tmp14, 13.0
-mul tmp4, tmp8, 3.0
-add tmp3, tmp3, tmp4
-sin tmp3, tmp3
-mul tmp3, tmp3, 0.18
-add color_a, color_a, tmp3
+mul tmp4, tmp12, -0.24
+mul tmp9, tmp8, 0.82
+add tmp4, tmp4, tmp9
+mul tmp9, tmp14, 0.31
+add tmp4, tmp4, tmp9
+add tmp4, tmp4, 2.0
+mul tmp4, tmp4, 3.0
+floor tmp9, tmp4
+fract tmp4, tmp4
 
-mul tmp3, tmp12, 21.0
-mul tmp4, tmp14, -4.0
+mul tmp13, tmp3, tmp3
+mul tmp10, tmp3, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp13, tmp13, tmp10
+mul tmp11, tmp4, tmp4
+mul tmp10, tmp4, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp11, tmp11, tmp10
+
+mul color_r, tmp5, 17.0
+mul color_g, tmp9, 29.0
+add color_r, color_r, color_g
+mul tmp10, tmp5, tmp9
+mul tmp10, tmp10, 7.0
+add color_r, color_r, tmp10
+add color_r, color_r, 4096.0
+mod color_r, color_r, 31.0
+mov color_g, color_r
+add color_g, color_g, 17.0
+mul tmp10, tmp9, 7.0
+add color_g, color_g, tmp10
+mod color_g, color_g, 31.0
+mov color_b, color_r
+add color_b, color_b, 29.0
+mul tmp10, tmp5, 7.0
+add color_b, color_b, tmp10
+mod color_b, color_b, 31.0
+mov tmp10, color_r
+add tmp10, tmp10, 53.0
+mul tmp6, tmp5, 7.0
+add tmp10, tmp10, tmp6
+mul tmp6, tmp9, 7.0
+add tmp10, tmp10, tmp6
+mod tmp10, tmp10, 31.0
+div color_r, color_r, 31.0
+div color_g, color_g, 31.0
+div color_b, color_b, 31.0
+div tmp10, tmp10, 31.0
+sub color_g, color_g, color_r
+mul color_g, color_g, tmp13
+add color_r, color_r, color_g
+sub tmp10, tmp10, color_b
+mul tmp10, tmp10, tmp13
+add color_b, color_b, tmp10
+sub color_b, color_b, color_r
+mul color_b, color_b, tmp11
+add color_r, color_r, color_b
+mul color_r, color_r, 0.46
+add color_a, color_a, color_r
+
+; Octave 2, coastline breakup.
+mul tmp3, tmp12, 0.78
+mul tmp4, tmp8, 0.18
 add tmp3, tmp3, tmp4
-mul tmp4, tmp8, 12.0
+mul tmp4, tmp14, 0.39
 add tmp3, tmp3, tmp4
-sin tmp3, tmp3
-mul tmp3, tmp3, 0.14
-add color_a, color_a, tmp3
-add color_a, color_a, 0.5
+add tmp3, tmp3, 2.0
+mul tmp3, tmp3, 7.0
+floor tmp5, tmp3
+fract tmp3, tmp3
+
+mul tmp4, tmp12, -0.24
+mul tmp9, tmp8, 0.82
+add tmp4, tmp4, tmp9
+mul tmp9, tmp14, 0.31
+add tmp4, tmp4, tmp9
+add tmp4, tmp4, 2.0
+mul tmp4, tmp4, 7.0
+floor tmp9, tmp4
+fract tmp4, tmp4
+
+mul tmp13, tmp3, tmp3
+mul tmp10, tmp3, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp13, tmp13, tmp10
+mul tmp11, tmp4, tmp4
+mul tmp10, tmp4, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp11, tmp11, tmp10
+
+mul color_r, tmp5, 23.0
+mul color_g, tmp9, 11.0
+add color_r, color_r, color_g
+mul tmp10, tmp5, tmp9
+mul tmp10, tmp10, 13.0
+add color_r, color_r, tmp10
+add color_r, color_r, 4101.0
+mod color_r, color_r, 37.0
+mov color_g, color_r
+add color_g, color_g, 23.0
+mul tmp10, tmp9, 13.0
+add color_g, color_g, tmp10
+mod color_g, color_g, 37.0
+mov color_b, color_r
+add color_b, color_b, 11.0
+mul tmp10, tmp5, 13.0
+add color_b, color_b, tmp10
+mod color_b, color_b, 37.0
+mov tmp10, color_r
+add tmp10, tmp10, 47.0
+mul tmp6, tmp5, 13.0
+add tmp10, tmp10, tmp6
+mul tmp6, tmp9, 13.0
+add tmp10, tmp10, tmp6
+mod tmp10, tmp10, 37.0
+div color_r, color_r, 37.0
+div color_g, color_g, 37.0
+div color_b, color_b, 37.0
+div tmp10, tmp10, 37.0
+sub color_g, color_g, color_r
+mul color_g, color_g, tmp13
+add color_r, color_r, color_g
+sub tmp10, tmp10, color_b
+mul tmp10, tmp10, tmp13
+add color_b, color_b, tmp10
+sub color_b, color_b, color_r
+mul color_b, color_b, tmp11
+add color_r, color_r, color_b
+mul color_r, color_r, 0.36
+add color_a, color_a, color_r
+
+; Octave 3, small island and edge detail.
+mul tmp3, tmp12, 0.78
+mul tmp4, tmp8, 0.18
+add tmp3, tmp3, tmp4
+mul tmp4, tmp14, 0.39
+add tmp3, tmp3, tmp4
+add tmp3, tmp3, 2.0
+mul tmp3, tmp3, 15.0
+floor tmp5, tmp3
+fract tmp3, tmp3
+
+mul tmp4, tmp12, -0.24
+mul tmp9, tmp8, 0.82
+add tmp4, tmp4, tmp9
+mul tmp9, tmp14, 0.31
+add tmp4, tmp4, tmp9
+add tmp4, tmp4, 2.0
+mul tmp4, tmp4, 15.0
+floor tmp9, tmp4
+fract tmp4, tmp4
+
+mul tmp13, tmp3, tmp3
+mul tmp10, tmp3, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp13, tmp13, tmp10
+mul tmp11, tmp4, tmp4
+mul tmp10, tmp4, 2.0
+sub tmp10, 3.0, tmp10
+mul tmp11, tmp11, tmp10
+
+mul color_r, tmp5, 31.0
+mul color_g, tmp9, 19.0
+add color_r, color_r, color_g
+mul tmp10, tmp5, tmp9
+mul tmp10, tmp10, 17.0
+add color_r, color_r, tmp10
+add color_r, color_r, 4117.0
+mod color_r, color_r, 43.0
+mov color_g, color_r
+add color_g, color_g, 31.0
+mul tmp10, tmp9, 17.0
+add color_g, color_g, tmp10
+mod color_g, color_g, 43.0
+mov color_b, color_r
+add color_b, color_b, 19.0
+mul tmp10, tmp5, 17.0
+add color_b, color_b, tmp10
+mod color_b, color_b, 43.0
+mov tmp10, color_r
+add tmp10, tmp10, 67.0
+mul tmp6, tmp5, 17.0
+add tmp10, tmp10, tmp6
+mul tmp6, tmp9, 17.0
+add tmp10, tmp10, tmp6
+mod tmp10, tmp10, 43.0
+div color_r, color_r, 43.0
+div color_g, color_g, 43.0
+div color_b, color_b, 43.0
+div tmp10, tmp10, 43.0
+sub color_g, color_g, color_r
+mul color_g, color_g, tmp13
+add color_r, color_r, color_g
+sub tmp10, tmp10, color_b
+mul tmp10, tmp10, tmp13
+add color_b, color_b, tmp10
+sub color_b, color_b, color_r
+mul color_b, color_b, tmp11
+add color_r, color_r, color_b
+mul color_r, color_r, 0.22
+add color_a, color_a, color_r
+
+; Bias and latitude/front-back shaping.
+mul tmp9, tmp8, 0.05
+add color_a, color_a, tmp9
+mul tmp9, tmp14, -0.03
+add color_a, color_a, tmp9
 
 ; Base ocean/land/highland.
 mov color_r, 0.12
 mov color_g, 0.45
 mov color_b, 0.78
 
-gt tmp3, color_a, 0.54
+gt tmp3, color_a, 0.42
 jnz tmp3, land
-jmp planet_shell_overlay
+jmp shade
 
 land:
 mov color_r, 0.17
 mov color_g, 0.65
 mov color_b, 0.34
-gt tmp3, color_a, 0.73
+gt tmp3, color_a, 0.62
 jnz tmp3, highland
-jmp planet_shell_overlay
+jmp shade
 
 highland:
 mov color_r, 0.58
 mov color_g, 0.72
 mov color_b, 0.55
-jmp planet_shell_overlay
+jmp shade
 
 planet_shell_overlay:
+; Hidden for now. Keep the label around so the cloud shell can be restored
+; against the same terrain noise path later.
+jmp shade
 mov tmp2, 1.0
 jmp compute_cloud_shell
 
