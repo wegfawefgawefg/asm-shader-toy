@@ -57,11 +57,19 @@ Initial registers:
 - `r2`: time in seconds
 - `r3`: render width
 - `r4`: render height
-- `r5`: mouse x, reserved
-- `r6`: mouse y, reserved
-- `r7`: mouse down, reserved
+- `r5`: mouse x while left button is down, otherwise `0`
+- `r6`: mouse y while left button is down, otherwise `0`
+- `r7`: mouse down, `1` or `0`
+- `r8`: mouse click x
+- `r9`: mouse click y
+- `r10`: frame index
+- `r11`: previous frame delta time in seconds
+- `r12`: local wall-clock seconds since midnight
+- `r13`: local year
+- `r14`: local month, `1..12`
+- `r15`: local day of month, `1..31`
 
-Scratch registers start at `r8`.
+Scratch registers start at `r16`.
 
 ## Instructions
 
@@ -96,4 +104,3 @@ ret
 
 `out` does not stop execution. Use `ret` if the program should end immediately
 after writing a color.
-

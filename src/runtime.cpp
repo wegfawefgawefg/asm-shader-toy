@@ -43,6 +43,14 @@ void seed_inputs(Registers& registers, const PixelInputs& inputs) {
     registers[5] = inputs.mouse_x;
     registers[6] = inputs.mouse_y;
     registers[7] = inputs.mouse_down;
+    registers[8] = inputs.mouse_click_x;
+    registers[9] = inputs.mouse_click_y;
+    registers[10] = static_cast<float>(inputs.frame);
+    registers[11] = inputs.time_delta;
+    registers[12] = inputs.wall_clock_seconds;
+    registers[13] = static_cast<float>(inputs.year);
+    registers[14] = static_cast<float>(inputs.month);
+    registers[15] = static_cast<float>(inputs.day);
 }
 
 std::uint32_t pack_rgba(Rgba rgba) {
@@ -151,14 +159,30 @@ Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimit
     return color;
 }
 
-void render_frame(const Program& program, int width, int height, float time,
+void render_frame(const Program& program, const FrameInputs& inputs,
                   std::vector<std::uint32_t>& pixels, const RunLimits& limits) {
-    pixels.resize(static_cast<std::size_t>(width * height));
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const PixelInputs inputs{x, y, width, height, time};
-            pixels[static_cast<std::size_t>(y * width + x)] =
-                pack_rgba(run_pixel(program, inputs, limits));
+    pixels.resize(static_cast<std::size_t>(inputs.width * inputs.height));
+    for (int y = 0; y < inputs.height; ++y) {
+        for (int x = 0; x < inputs.width; ++x) {
+            PixelInputs pixel;
+            pixel.x = x;
+            pixel.y = y;
+            pixel.width = inputs.width;
+            pixel.height = inputs.height;
+            pixel.time = inputs.time;
+            pixel.time_delta = inputs.time_delta;
+            pixel.frame = inputs.frame;
+            pixel.mouse_x = inputs.mouse_x;
+            pixel.mouse_y = inputs.mouse_y;
+            pixel.mouse_down = inputs.mouse_down;
+            pixel.mouse_click_x = inputs.mouse_click_x;
+            pixel.mouse_click_y = inputs.mouse_click_y;
+            pixel.wall_clock_seconds = inputs.wall_clock_seconds;
+            pixel.year = inputs.year;
+            pixel.month = inputs.month;
+            pixel.day = inputs.day;
+            pixels[static_cast<std::size_t>(y * inputs.width + x)] =
+                pack_rgba(run_pixel(program, pixel, limits));
         }
     }
 }

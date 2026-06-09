@@ -14,9 +14,34 @@ struct PixelInputs {
     int width = 240;
     int height = 160;
     float time = 0.0F;
+    float time_delta = 0.0F;
+    int frame = 0;
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
     float mouse_down = 0.0F;
+    float mouse_click_x = 0.0F;
+    float mouse_click_y = 0.0F;
+    float wall_clock_seconds = 0.0F;
+    int year = 1970;
+    int month = 1;
+    int day = 1;
+};
+
+struct FrameInputs {
+    int width = 240;
+    int height = 160;
+    float time = 0.0F;
+    float time_delta = 0.0F;
+    int frame = 0;
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    float mouse_down = 0.0F;
+    float mouse_click_x = 0.0F;
+    float mouse_click_y = 0.0F;
+    float wall_clock_seconds = 0.0F;
+    int year = 1970;
+    int month = 1;
+    int day = 1;
 };
 
 struct RunLimits {
@@ -33,7 +58,7 @@ struct Rgba {
 using Registers = std::array<float, register_count>;
 
 Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits = {});
-void render_frame(const Program& program, int width, int height, float time,
+void render_frame(const Program& program, const FrameInputs& inputs,
                   std::vector<std::uint32_t>& pixels, const RunLimits& limits = {});
 
 } // namespace ast

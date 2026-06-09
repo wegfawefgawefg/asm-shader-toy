@@ -12,6 +12,7 @@ This project starts as a CPU-rendered toy, not a fast shader compiler.
 - One uploaded streaming texture per frame.
 - No interpreter work during texture-to-window scaling.
 - Simple assembler with labels, constants, comments, and includes.
+- Shadertoy-like scalar inputs for resolution, time, frame, mouse, and date.
 
 ## Performance Stance
 
@@ -37,6 +38,7 @@ The first optimization targets should be:
 - Dynamic indirect jumps.
 - Unbounded programs.
 - GPU shader generation.
+- Texture, video, cubemap, keyboard, webcam, microphone, or audio channel input.
 - A polished editor UI.
 
 ## Open Design Questions
@@ -46,4 +48,3 @@ The first optimization targets should be:
 - Whether multi-file programs should remain textual `.include` or become a
   module system.
 - How much debugging UI belongs in the SDL runner versus separate CLI tools.
-

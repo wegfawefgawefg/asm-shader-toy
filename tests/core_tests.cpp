@@ -62,6 +62,26 @@ void test_unary_math_uses_destination_and_source() {
     require(color.r == 128, "sqrt source operand is used");
 }
 
+void test_frame_inputs_seed_registers() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        out8 r10, r11, r12, r7
+    )");
+
+    require(result.ok(), "frame input program assembles");
+
+    ast::PixelInputs inputs;
+    inputs.frame = 7;
+    inputs.time_delta = 16.0F;
+    inputs.wall_clock_seconds = 42.0F;
+    inputs.mouse_down = 255.0F;
+
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    require(color.r == 7, "frame register is seeded");
+    require(color.g == 16, "delta register is seeded");
+    require(color.b == 42, "wall-clock register is seeded");
+    require(color.a == 255, "mouse-down register is seeded");
+}
+
 void test_example_assembles() {
     if (!std::filesystem::exists("examples/plasma.asm")) {
         return;
@@ -83,6 +103,7 @@ int main() {
     test_basic_output();
     test_labels_and_constants();
     test_unary_math_uses_destination_and_source();
+    test_frame_inputs_seed_registers();
     test_example_assembles();
     test_diagnostics();
     return 0;

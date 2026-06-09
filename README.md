@@ -40,10 +40,11 @@ Every pixel starts with these registers:
 - `r4`: render height
 - `r5`: mouse x, reserved
 - `r6`: mouse y, reserved
-- `r7`: mouse down, reserved
+- `r7`: mouse down
 
-Registers `r8` through `r31` are free scratch registers. Colors are written with
+Registers `r8` through `r15` hold more frame inputs. Scratch registers start at
+`r16`. Colors are written with
 `out` for normalized `0..1` channels or `out8` for byte `0..255` channels.
 
-See [docs/scope.md](docs/scope.md) and [docs/assembly.md](docs/assembly.md).
-
+See [docs/scope.md](docs/scope.md), [docs/assembly.md](docs/assembly.md), and
+[docs/inputs.md](docs/inputs.md).

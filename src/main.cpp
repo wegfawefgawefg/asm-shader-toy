@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -160,6 +161,13 @@ int main(int argc, char** argv) {
     bool running = true;
     std::vector<std::uint32_t> pixels;
     const auto start = std::chrono::steady_clock::now();
+    auto previous_frame_time = start;
+    int frame = 0;
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    float mouse_down = 0.0F;
+    float mouse_click_x = 0.0F;
+    float mouse_click_y = 0.0F;
 
     while (running) {
         SDL_Event event{};
@@ -170,12 +178,55 @@ int main(int argc, char** argv) {
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
                 running = false;
             }
+            if (event.type == SDL_MOUSEMOTION) {
+                mouse_x = static_cast<float>(event.motion.x) / static_cast<float>(args.scale);
+                mouse_y = static_cast<float>(event.motion.y) / static_cast<float>(args.scale);
+            }
+            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+                mouse_down = 1.0F;
+                mouse_click_x = static_cast<float>(event.button.x) / static_cast<float>(args.scale);
+                mouse_click_y = static_cast<float>(event.button.y) / static_cast<float>(args.scale);
+                mouse_x = mouse_click_x;
+                mouse_y = mouse_click_y;
+            }
+            if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+                mouse_down = 0.0F;
+            }
         }
 
         const auto now = std::chrono::steady_clock::now();
         const std::chrono::duration<float> elapsed = now - start;
-        ast::render_frame(assembled.program, args.width, args.height, elapsed.count(), pixels,
-                          ast::RunLimits{args.max_steps});
+        const std::chrono::duration<float> delta = now - previous_frame_time;
+        previous_frame_time = now;
+
+        const std::time_t wall_time = std::time(nullptr);
+        const std::tm* local_time = std::localtime(&wall_time);
+        const int year = local_time != nullptr ? local_time->tm_year + 1900 : 1970;
+        const int month = local_time != nullptr ? local_time->tm_mon + 1 : 1;
+        const int day = local_time != nullptr ? local_time->tm_mday : 1;
+        const float seconds_of_day =
+            local_time != nullptr
+                ? static_cast<float>((local_time->tm_hour * 60 + local_time->tm_min) * 60 +
+                                     local_time->tm_sec)
+                : 0.0F;
+
+        ast::FrameInputs frame_inputs;
+        frame_inputs.width = args.width;
+        frame_inputs.height = args.height;
+        frame_inputs.time = elapsed.count();
+        frame_inputs.time_delta = delta.count();
+        frame_inputs.frame = frame;
+        frame_inputs.mouse_x = mouse_down != 0.0F ? mouse_x : 0.0F;
+        frame_inputs.mouse_y = mouse_down != 0.0F ? mouse_y : 0.0F;
+        frame_inputs.mouse_down = mouse_down;
+        frame_inputs.mouse_click_x = mouse_click_x;
+        frame_inputs.mouse_click_y = mouse_click_y;
+        frame_inputs.wall_clock_seconds = seconds_of_day;
+        frame_inputs.year = year;
+        frame_inputs.month = month;
+        frame_inputs.day = day;
+        ast::render_frame(assembled.program, frame_inputs, pixels, ast::RunLimits{args.max_steps});
+        ++frame;
 
         SDL_UpdateTexture(texture, nullptr, pixels.data(),
                           args.width * static_cast<int>(sizeof(std::uint32_t)));
