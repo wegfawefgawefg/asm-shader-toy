@@ -30,11 +30,20 @@ enum class Op {
     Eq,
     Jmp,
     Jnz,
+    Jz,
+    Jeq,
+    Jne,
+    Jlt,
+    Jle,
+    Jgt,
+    Jge,
+    Call,
     Out,
     Out8,
     Tex,
     Texel,
     Ret,
+    Halt,
 };
 
 enum class OperandKind {

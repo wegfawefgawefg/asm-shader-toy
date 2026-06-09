@@ -4,6 +4,7 @@ Run from the repository root after building:
 
 ```sh
 ./build/asm-shader-toy examples/basics/time_pulse.asm
+./build/asm-shader-toy examples/basics/subroutines.asm
 ./build/asm-shader-toy examples/input/mouse_rings.asm
 ./build/asm-shader-toy examples/multifile/main.asm
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm

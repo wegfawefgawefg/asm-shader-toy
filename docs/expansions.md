@@ -10,20 +10,20 @@ worth serious consideration. The intent is to pick through these one by one.
    labels, aliases, and constants. If repeated inclusion becomes useful later,
    add an explicit raw include directive instead of making it the default.
 
-2. Subroutines.
+2. Subroutines. Done.
 
    Add `call`, real subroutine `ret`, and `halt`. `call` should push a return
    address onto a small bounded VM call stack. `ret` should return from a call,
    and either halt or error when the stack is empty. `halt` gives programs an
    unambiguous end instruction.
 
-3. Branch ergonomics.
+3. Branch ergonomics. Done.
 
    Add a small set of direct branch helpers if the current `cmp-ish op` plus
    `jnz` pattern stays annoying. Candidates are `jz`, `jeq`, `jne`, `jlt`,
    `jle`, `jgt`, and `jge`. Keep this small so control flow remains visible.
 
-4. Local labels.
+4. Local labels. Done.
 
    Support labels scoped under the previous global label, such as `.loop` or
    `.done`. This would make includes and helper blocks easier to write without

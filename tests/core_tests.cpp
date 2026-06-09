@@ -50,6 +50,99 @@ void test_labels_and_constants() {
     require(bright.r == 255 && bright.g == 32 && bright.b == 16, "true branch runs");
 }
 
+void test_subroutine_call_ret_and_halt() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        mov r16, 40
+        call add_two
+        out8 r16, 0, 0, 255
+        halt
+    add_two:
+        add r16, r16, 2
+        ret
+    )");
+
+    require(result.ok(), "subroutine program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 42, "call returns to the caller");
+}
+
+void test_ret_without_call_still_halts() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        out8 7, 0, 0, 255
+        ret
+        out8 255, 0, 0, 255
+    )");
+
+    require(result.ok(), "legacy ret program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 7, "ret without a call still halts");
+}
+
+void test_local_labels_are_scoped_to_global_labels() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+    main:
+        mov r16, 0
+    .loop:
+        add r16, r16, 1
+        jlt r16, 3, .loop
+        call helper
+        out8 r16, 0, 0, 255
+        halt
+    helper:
+        add r16, r16, 10
+    .loop:
+        add r16, r16, 1
+        jlt r16, 15, .loop
+        ret
+    )");
+
+    require(result.ok(), "local label program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 15, "local labels resolve within the current global label");
+}
+
+void test_local_label_requires_global_label() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+    .loop:
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), "local labels require a preceding global label");
+}
+
+void test_branch_helpers() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        mov r16, 1
+        jz r16, fail
+        jeq r16, 1, ok1
+        jmp fail
+    ok1:
+        jne r16, 2, ok2
+        jmp fail
+    ok2:
+        jle r16, 1, ok3
+        jmp fail
+    ok3:
+        jge r16, 1, ok4
+        jmp fail
+    ok4:
+        jgt 2, r16, ok5
+        jmp fail
+    ok5:
+        jlt r16, 2, pass
+        jmp fail
+    fail:
+        out8 255, 0, 0, 255
+        halt
+    pass:
+        out8 0, 255, 0, 255
+        halt
+    )");
+
+    require(result.ok(), "branch helper program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.g == 255 && color.r == 0, "branch helpers jump correctly");
+}
+
 void test_unary_math_uses_destination_and_source() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         sin r8, r2
@@ -295,6 +388,7 @@ void test_example_assembles() {
 
     const char* examples[] = {
         "examples/basics/plasma.asm",
+        "examples/basics/subroutines.asm",
         "examples/basics/time_pulse.asm",
         "examples/buffers/life_buffer.asm",
         "examples/buffers/life_display.asm",
@@ -326,6 +420,11 @@ void test_diagnostics() {
 int main() {
     test_basic_output();
     test_labels_and_constants();
+    test_subroutine_call_ret_and_halt();
+    test_ret_without_call_still_halts();
+    test_local_labels_are_scoped_to_global_labels();
+    test_local_label_requires_global_label();
+    test_branch_helpers();
     test_unary_math_uses_destination_and_source();
     test_frame_inputs_seed_registers();
     test_named_inputs_and_aliases();

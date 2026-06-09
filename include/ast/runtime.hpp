@@ -50,6 +50,7 @@ struct FrameInputs {
 
 struct RunLimits {
     int max_steps = 4096;
+    int max_call_depth = 32;
 };
 
 struct Rgba {

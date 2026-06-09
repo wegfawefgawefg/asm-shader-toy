@@ -77,7 +77,7 @@ tmp0..tmp15         general temporaries
 
 ## Labels
 
-Labels define branch targets.
+Labels define branch and call targets.
 
 ```asm
 start:
@@ -86,8 +86,41 @@ start:
     jnz r9, start
 ```
 
+Local labels start with `.` and are scoped under the previous global label.
+They are useful inside subroutines and helper blocks.
+
+```asm
+palette:
+    jlt tmp0, 2.0, .blue
+    jmp .pink
+.blue:
+    ret
+.pink:
+    ret
+```
+
 Programs are bounded by a runtime `--max-steps` limit so accidental infinite
 loops do not hang a frame forever.
+
+## Subroutines
+
+`call label` pushes a return address onto a small bounded call stack and jumps
+to `label`. `ret` returns to the caller when the stack is non-empty. For
+backward compatibility, `ret` still halts the program when no caller exists.
+Use `halt` for an explicit program stop.
+
+```asm
+main:
+    call palette
+    out color_r, color_g, color_b, 1.0
+    halt
+
+palette:
+    mov color_r, 1.0
+    mov color_g, 0.2
+    mov color_b, 0.5
+    ret
+```
 
 ## Registers
 
@@ -163,15 +196,25 @@ gt dst, a, b
 eq dst, a, b
 jmp label
 jnz test, label
+jz test, label
+jeq a, b, label
+jne a, b, label
+jlt a, b, label
+jle a, b, label
+jgt a, b, label
+jge a, b, label
+call label
 out r, g, b, a      ; normalized 0..1 channels
 out8 r, g, b, a     ; byte 0..255 channels
 tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
 ret
+halt
 ```
 
-`out` does not stop execution. Use `ret` if the program should end immediately
-after writing a color.
+`out` does not stop execution. Use `halt` if the program should end immediately
+after writing a color. `ret` is for returning from `call`, but still halts when
+used with an empty call stack.
 
 `tex` samples one of the four channels loaded by `--channel0` through
 `--channel3` or produced by `--buffer0` through `--buffer3`. Coordinates are

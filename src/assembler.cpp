@@ -22,6 +22,7 @@ struct RawInstruction {
     std::vector<std::string> args;
     int line = 0;
     std::string file;
+    std::string label_scope;
 };
 
 struct Alias {
@@ -39,7 +40,10 @@ struct ParseState {
     std::set<std::filesystem::path> include_stack;
     std::set<std::filesystem::path> included_files;
     std::vector<std::filesystem::path> dependencies;
+    std::string current_global_label;
 };
+
+void add_diag(ParseState& state, const std::string& file, int line, std::string message);
 
 std::string trim(std::string_view text) {
     std::size_t first = 0;
@@ -59,6 +63,25 @@ std::string lower(std::string text) {
     std::ranges::transform(text, text.begin(),
                            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return text;
+}
+
+bool is_local_label(std::string_view label) {
+    return !label.empty() && label.front() == '.';
+}
+
+std::string scoped_label_name(ParseState& state, const std::string& label, const std::string& file,
+                              int line) {
+    if (!is_local_label(label)) {
+        state.current_global_label = label;
+        return label;
+    }
+
+    if (state.current_global_label.empty()) {
+        add_diag(state, file, line, "local label requires a preceding global label: " + label);
+        return {};
+    }
+
+    return state.current_global_label + label;
 }
 
 std::string strip_comment(std::string line) {
@@ -237,10 +260,14 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
         }
 
         if (line.back() == ':') {
-            const std::string label =
+            const std::string parsed_label =
                 lower(trim(std::string_view{line}.substr(0, line.size() - 1)));
-            if (label.empty()) {
+            if (parsed_label.empty()) {
                 add_diag(state, file, line_no, "empty label");
+                continue;
+            }
+            const std::string label = scoped_label_name(state, parsed_label, file, line_no);
+            if (label.empty()) {
                 continue;
             }
             state.labels[label] = static_cast<int>(state.raw.size());
@@ -311,6 +338,7 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
         raw.op = directive;
         raw.line = line_no;
         raw.file = file;
+        raw.label_scope = state.current_global_label;
         for (std::size_t i = 1; i < tokens.size(); ++i) {
             raw.args.push_back(lower(tokens[i]));
         }
@@ -325,8 +353,10 @@ std::optional<Op> parse_op(std::string_view op) {
         {"abs", Op::Abs}, {"floor", Op::Floor}, {"fract", Op::Fract}, {"min", Op::Min},
         {"max", Op::Max}, {"mod", Op::Mod},     {"norm", Op::Norm},   {"lt", Op::Lt},
         {"gt", Op::Gt},   {"eq", Op::Eq},       {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
+        {"jz", Op::Jz},   {"jeq", Op::Jeq},     {"jne", Op::Jne},     {"jlt", Op::Jlt},
+        {"jle", Op::Jle}, {"jgt", Op::Jgt},     {"jge", Op::Jge},     {"call", Op::Call},
         {"out", Op::Out}, {"out8", Op::Out8},   {"tex", Op::Tex},     {"texel", Op::Texel},
-        {"ret", Op::Ret},
+        {"ret", Op::Ret}, {"halt", Op::Halt},
     };
 
     const auto it = ops.find(op);
@@ -339,6 +369,7 @@ std::optional<Op> parse_op(std::string_view op) {
 int expected_operands(Op op) {
     switch (op) {
     case Op::Ret:
+    case Op::Halt:
         return 0;
     case Op::Sin:
     case Op::Cos:
@@ -349,8 +380,10 @@ int expected_operands(Op op) {
     case Op::Mov:
         return 2;
     case Op::Jmp:
+    case Op::Call:
         return 1;
     case Op::Jnz:
+    case Op::Jz:
         return 2;
     case Op::Add:
     case Op::Sub:
@@ -363,6 +396,12 @@ int expected_operands(Op op) {
     case Op::Lt:
     case Op::Gt:
     case Op::Eq:
+    case Op::Jeq:
+    case Op::Jne:
+    case Op::Jlt:
+    case Op::Jle:
+    case Op::Jgt:
+    case Op::Jge:
         return 3;
     case Op::Out:
     case Op::Out8:
@@ -400,12 +439,72 @@ bool operand_must_be_register(Op op, int index) {
         return index >= 0 && index <= 3;
     case Op::Jmp:
     case Op::Jnz:
+    case Op::Jz:
+    case Op::Jeq:
+    case Op::Jne:
+    case Op::Jlt:
+    case Op::Jle:
+    case Op::Jgt:
+    case Op::Jge:
+    case Op::Call:
     case Op::Out:
     case Op::Out8:
     case Op::Ret:
+    case Op::Halt:
         return false;
     }
     return false;
+}
+
+bool operand_must_be_label(Op op, int index) {
+    switch (op) {
+    case Op::Jmp:
+    case Op::Call:
+        return index == 0;
+    case Op::Jnz:
+    case Op::Jz:
+        return index == 1;
+    case Op::Jeq:
+    case Op::Jne:
+    case Op::Jlt:
+    case Op::Jle:
+    case Op::Jgt:
+    case Op::Jge:
+        return index == 2;
+    case Op::Mov:
+    case Op::Add:
+    case Op::Sub:
+    case Op::Mul:
+    case Op::Div:
+    case Op::Sin:
+    case Op::Cos:
+    case Op::Sqrt:
+    case Op::Abs:
+    case Op::Floor:
+    case Op::Fract:
+    case Op::Min:
+    case Op::Max:
+    case Op::Mod:
+    case Op::Norm:
+    case Op::Lt:
+    case Op::Gt:
+    case Op::Eq:
+    case Op::Out:
+    case Op::Out8:
+    case Op::Tex:
+    case Op::Texel:
+    case Op::Ret:
+    case Op::Halt:
+        return false;
+    }
+    return false;
+}
+
+std::string resolve_label_token(const RawInstruction& raw, const std::string& token) {
+    if (is_local_label(token) && !raw.label_scope.empty()) {
+        return raw.label_scope + token;
+    }
+    return token;
 }
 
 std::optional<Operand> parse_operand(ParseState& state, const RawInstruction& raw, Op op,
@@ -428,8 +527,9 @@ std::optional<Operand> parse_operand(ParseState& state, const RawInstruction& ra
         return std::nullopt;
     }
 
-    if ((op == Op::Jmp && index == 0) || (op == Op::Jnz && index == 1)) {
-        const auto label = state.labels.find(token);
+    if (operand_must_be_label(op, index)) {
+        const std::string label_token = resolve_label_token(raw, token);
+        const auto label = state.labels.find(label_token);
         if (label == state.labels.end()) {
             add_diag(state, raw.file, raw.line, "unknown label: " + token);
             return std::nullopt;

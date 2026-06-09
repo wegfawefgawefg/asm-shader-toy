@@ -37,8 +37,7 @@ Runnable examples live in `examples/`:
 
 ## Subroutines
 
-Labels plus `jmp`/`jnz` are enough for loops, but not for reusable functions.
-The likely shape is:
+Reusable helper blocks are supported with `call`, `ret`, and `halt`:
 
 ```asm
 call palette
@@ -49,14 +48,27 @@ palette:
     ret
 ```
 
-That requires a small VM call stack and a separate `halt` instruction. The
-current `ret` exits the whole program, so adding subroutines should be done as a
-deliberate compatibility break or with a transition:
+`call` pushes a return address onto a bounded VM call stack. `ret` returns from
+`call`, or halts if the stack is empty so old programs keep working. `halt`
+always exits the current pixel program.
 
-- add `halt`
-- make `call` push return addresses
-- make `ret` return from `call`, or halt if the stack is empty
-- cap call depth to keep bad programs bounded
+## Branches And Local Labels
+
+Branch targets can use global labels or local labels scoped under the previous
+global label:
+
+```asm
+palette:
+    jlt tmp0, 2.0, .blue
+    jmp .pink
+.blue:
+    ret
+.pink:
+    ret
+```
+
+Current branch instructions are `jmp`, `jnz`, `jz`, `jeq`, `jne`, `jlt`, `jle`,
+`jgt`, and `jge`.
 
 ## Buffers
 

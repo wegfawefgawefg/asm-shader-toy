@@ -1,6 +1,7 @@
 #include "ast/runtime.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <thread>
 
@@ -130,6 +131,10 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
     Rgba color{0, 0, 0, 255};
     int pc = 0;
     int steps = 0;
+    std::array<int, 32> call_stack{};
+    int call_depth = 0;
+    const int max_call_depth =
+        std::clamp(limits.max_call_depth, 0, static_cast<int>(call_stack.size()));
 
     while (pc >= 0 && pc < static_cast<int>(program.code.size()) && steps < limits.max_steps) {
         ++steps;
@@ -205,6 +210,49 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
                 pc = jump_target(o[1]);
             }
             break;
+        case Op::Jz:
+            if (value(0) == 0.0F) {
+                pc = jump_target(o[1]);
+            }
+            break;
+        case Op::Jeq:
+            if (std::fabs(value(0) - value(1)) <= 0.000001F) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Jne:
+            if (std::fabs(value(0) - value(1)) > 0.000001F) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Jlt:
+            if (value(0) < value(1)) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Jle:
+            if (value(0) <= value(1)) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Jgt:
+            if (value(0) > value(1)) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Jge:
+            if (value(0) >= value(1)) {
+                pc = jump_target(o[2]);
+            }
+            break;
+        case Op::Call:
+            if (call_depth >= max_call_depth) {
+                return color;
+            }
+            call_stack[static_cast<std::size_t>(call_depth)] = pc;
+            ++call_depth;
+            pc = jump_target(o[0]);
+            break;
         case Op::Out:
             color = Rgba{pack_unorm(value(0)), pack_unorm(value(1)), pack_unorm(value(2)),
                          pack_unorm(value(3))};
@@ -233,6 +281,13 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
             break;
         }
         case Op::Ret:
+            if (call_depth > 0) {
+                --call_depth;
+                pc = call_stack[static_cast<std::size_t>(call_depth)];
+                break;
+            }
+            return color;
+        case Op::Halt:
             return color;
         }
     }
