@@ -248,9 +248,10 @@ int expected_operands(Op op) {
     case Op::Abs:
     case Op::Floor:
     case Op::Fract:
+    case Op::Mov:
+        return 2;
     case Op::Jmp:
         return 1;
-    case Op::Mov:
     case Op::Jnz:
         return 2;
     case Op::Add:

@@ -2,6 +2,7 @@
 #include "ast/runtime.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -48,6 +49,28 @@ void test_labels_and_constants() {
     require(bright.r == 255 && bright.g == 32 && bright.b == 16, "true branch runs");
 }
 
+void test_unary_math_uses_destination_and_source() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        sin r8, r2
+        cos r9, r8
+        sqrt r10, 0.25
+        out r10, r9, r8, 1.0
+    )");
+
+    require(result.ok(), "unary math program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{0, 0, 240, 160, 0.0F});
+    require(color.r == 128, "sqrt source operand is used");
+}
+
+void test_example_assembles() {
+    if (!std::filesystem::exists("examples/plasma.asm")) {
+        return;
+    }
+
+    const ast::AssembleResult result = ast::assemble_file("examples/plasma.asm");
+    require(result.ok(), "example plasma program assembles");
+}
+
 void test_diagnostics() {
     const ast::AssembleResult result = ast::assemble_source("add 4, r0, r1\nwat r0\n");
     require(!result.ok(), "bad program reports diagnostics");
@@ -59,6 +82,8 @@ void test_diagnostics() {
 int main() {
     test_basic_output();
     test_labels_and_constants();
+    test_unary_math_uses_destination_and_source();
+    test_example_assembles();
     test_diagnostics();
     return 0;
 }
