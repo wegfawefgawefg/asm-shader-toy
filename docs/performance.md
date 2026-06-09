@@ -22,6 +22,7 @@ program.
 | O5 | Parallelize `render_frame` by row bands | Measured | Same as B0 | 258.65 | 3.89 | 9.67x | Accepted | Final mean of 3 runs: 252.97, 287.28, 235.70 FPS on a 32-thread machine. Large win, but noisy because workers are recreated each frame. |
 | O6 | Cap render worker count at 8 | Measured | Same as B0 | 154.48 | 6.89 | 5.78x | Rejected | Mean of 3 runs: 212.79, 125.82, 124.84 FPS. Slower than O5, so the cap was removed. |
 | O7 | Lower parallel threshold for retro resolutions | Measured | `./build-release/asm-shader-toy examples/raymarch/pixelated_planet.asm --size gba --measure-fps 60` | 1028.48 | 0.97 | 8.61x vs GBA baseline | Accepted | Mean of 3 runs: 976.89, 1060.12, 1048.43 FPS. Fixes the GBA-vs-PSP anomaly by letting 38,400-pixel GBA frames use parallel rendering. Follow-up threshold sweep set the final cutoff to 4,096 pixels. |
+| O8 | Persistent render worker pool | Measured | `./build-release/asm-shader-toy examples/perf/heavy.asm --size 512x512 --measure-fps 60` | 300.49 | 3.33 | 0.98x vs O7 state | Rejected | Mean of 3 runs: 291.21, 294.40, 315.87 FPS. Fresh pre-change baseline was 306.29 FPS. It helped `pixelated_planet.asm` at GBA slightly, 1095.74 vs 1076.98 FPS, but regressed heavy 512 and PSP, 369.11 vs 398.84 FPS, so the pool was removed. |
 
 Additional final check at the requested upper test bound:
 
@@ -35,9 +36,9 @@ ms_per_frame: 8.38792
 
 These are not accepted until measured against the benchmark matrix above.
 
-- Persistent render worker pool: current parallel rendering creates and joins
-  worker threads every frame. A pool should reduce scheduling noise and improve
-  windowed rendering stability.
+- Worker pool redesign: the condition-variable pool tried in O8 regressed the
+  main benchmark and PSP-sized planet render. A future attempt needs lower
+  overhead frame submission before replacing per-frame thread creation.
 - Predecoded fast instruction format: lower each instruction into fixed source
   register/immediate fields so the VM does less `OperandKind` branching in the
   inner loop.
@@ -46,8 +47,8 @@ These are not accepted until measured against the benchmark matrix above.
   paths.
 - SIMD pixel batches: run multiple pixels together for branch-coherent shaders.
   This is harder because VM branches can diverge.
-- More representative benchmark mode: once worker pools exist, benchmark
-  startup/warmup should separate steady-state frame cost from setup cost.
+- More representative benchmark mode: benchmark startup/warmup should separate
+  steady-state frame cost from setup cost.
 - Optimized IR pass: constant folding, dead path cleanup, and tighter bytecode
   packing before interpretation.
 - GPU backend later: compile the asm IR to WGSL/GLSL after the CPU VM/debugger
