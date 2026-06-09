@@ -25,6 +25,7 @@ struct Args {
     int frames = -1;
     bool dry_run = false;
     bool no_graphics = false;
+    std::string save_frame_path;
     std::array<std::string, 4> channel_paths;
 };
 
@@ -112,6 +113,18 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--save-frame") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.save_frame_path = std::string{*value};
+            args.no_graphics = true;
+            if (args.frames < 0) {
+                args.frames = 1;
+            }
+            continue;
+        }
         if (arg == "--no-graphics" || arg == "--nographics") {
             args.no_graphics = true;
             if (args.frames < 0) {
@@ -143,7 +156,8 @@ void print_usage() {
               << "       --dimscale is accepted as an alias for --scale\n"
               << "       --channel0 path through --channel3 path load image inputs\n"
               << "       --dry-run assembles and validates image inputs without rendering\n"
-              << "       --no-graphics --frames N renders N CPU frames without a window\n";
+              << "       --no-graphics --frames N renders N CPU frames without a window\n"
+              << "       --save-frame path.png renders one headless frame to a PNG\n";
 }
 
 bool has_channel_paths(const Args& args) {
@@ -184,6 +198,25 @@ bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
     }
 
     SDL_FreeSurface(converted);
+    return true;
+}
+
+bool save_frame_png(const std::string& path, int width, int height,
+                    std::vector<std::uint32_t>& pixels) {
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(
+        pixels.data(), width, height, 32, width * static_cast<int>(sizeof(std::uint32_t)),
+        SDL_PIXELFORMAT_ABGR8888);
+    if (surface == nullptr) {
+        std::cerr << "SDL_CreateRGBSurfaceWithFormatFrom failed: " << SDL_GetError() << '\n';
+        return false;
+    }
+
+    const int result = IMG_SavePNG(surface, path.c_str());
+    SDL_FreeSurface(surface);
+    if (result != 0) {
+        std::cerr << "IMG_SavePNG failed for " << path << ": " << IMG_GetError() << '\n';
+        return false;
+    }
     return true;
 }
 
@@ -286,9 +319,18 @@ int main(int argc, char** argv) {
             ast::render_frame(assembled.program, frame_inputs, pixels,
                               ast::RunLimits{args.max_steps});
         }
+        if (!args.save_frame_path.empty() &&
+            !save_frame_png(args.save_frame_path, args.width, args.height, pixels)) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
         std::cout << "ok: rendered " << frame_count << " frame";
         if (frame_count != 1) {
             std::cout << "s";
+        }
+        if (!args.save_frame_path.empty()) {
+            std::cout << " to " << args.save_frame_path;
         }
         std::cout << " without graphics\n";
         IMG_Quit();

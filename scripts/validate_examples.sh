@@ -25,6 +25,10 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/multifile/main.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --no-graphics --frames 2
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
+    --size 64x80 \
+    --frames 2 \
+    --save-frame /tmp/asm-shader-toy-pixelated-planet.png
 ./build/asm-shader-toy examples/textures/image_passthrough.asm \
     --channel0 examples/assets/checker.png \
     --no-graphics \

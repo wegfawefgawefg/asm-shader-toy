@@ -31,6 +31,15 @@ Validate without opening windows:
 ./scripts/validate_examples.sh
 ```
 
+Export a still frame:
+
+```sh
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
+  --size 506x632 \
+  --frames 90 \
+  --save-frame /tmp/pixel_planet.png
+```
+
 Multi-file projects use textual `.include` paths relative to the file that
 contains the include:
 

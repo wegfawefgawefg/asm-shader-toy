@@ -43,6 +43,10 @@ Headless validation:
 ```sh
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 10
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
+  --size 506x632 \
+  --frames 90 \
+  --save-frame /tmp/pixel_planet.png
 ```
 
 Multi-file programs use `.include` with paths relative to the including file:
