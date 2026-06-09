@@ -1,19 +1,19 @@
 # Video Examples
 
-Video channels are not implemented yet.
+Video channels are decoded at startup with local `ffmpeg` and `ffprobe`, then
+sampled through the same `tex` instruction used by static image channels.
 
-The repository includes a tiny generated fixture for the future video backend:
+The repository includes a tiny generated fixture:
 
 ```text
 examples/assets/video/testsrc_160x90.mp4
 ```
 
-Intended future command shape:
+Run it with:
 
 ```sh
-./build/asm-shader-toy examples/video/future_video_channel.asm \
-  --video0 examples/assets/video/testsrc_160x90.mp4
+./build/asm-shader-toy examples/video/video_channel.asm \
+  --video0 examples/assets/video/testsrc_160x90.mp4 \
+  --size 160x90 \
+  --scale 4
 ```
-
-For now, use static image channels with `--channel0` through `--channel3`.
-

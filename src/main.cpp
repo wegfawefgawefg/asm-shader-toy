@@ -35,7 +35,19 @@ struct Args {
     int measure_fps_frames = 0;
     std::string save_frame_path;
     std::array<std::string, 4> channel_paths;
+    std::array<std::string, 4> video_paths;
     std::array<std::string, 4> buffer_paths;
+};
+
+struct VideoChannel {
+    int width = 0;
+    int height = 0;
+    double frames_per_second = 30.0;
+    std::vector<std::vector<std::uint32_t>> frames;
+
+    [[nodiscard]] bool loaded() const {
+        return width > 0 && height > 0 && !frames.empty();
+    }
 };
 
 std::string lower_ascii(std::string_view text) {
@@ -215,6 +227,15 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--video0" || arg == "--video1" || arg == "--video2" || arg == "--video3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.video_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
         if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
             const auto value = next();
             if (!value.has_value()) {
@@ -239,6 +260,7 @@ void print_usage() {
         << "       --dimscale is accepted as an alias for --scale\n"
         << "       --size presets: gb, gbc, gba, nes, snes, genesis, sms, n64, ps1, ds, psp\n"
         << "       --channel0 path through --channel3 path load image inputs\n"
+        << "       --video0 path through --video3 path load video inputs with ffmpeg\n"
         << "       --buffer0 path through --buffer3 path run feedback buffer passes into channels\n"
         << "       --dry-run assembles and validates image inputs without rendering\n"
         << "       --no-graphics --frames N renders N CPU frames without a window\n"
@@ -266,6 +288,15 @@ bool has_buffer_paths(const Args& args) {
     return false;
 }
 
+bool has_video_paths(const Args& args) {
+    for (const std::string& path : args.video_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 ast::ImageChannel make_buffer_channel(int width, int height,
                                       const std::vector<std::uint32_t>& pixels) {
     ast::ImageChannel channel;
@@ -273,6 +304,158 @@ ast::ImageChannel make_buffer_channel(int width, int height,
     channel.height = height;
     channel.external_pixels = &pixels;
     return channel;
+}
+
+std::string shell_quote(const std::string& text) {
+    std::string quoted = "'";
+    for (char ch : text) {
+        if (ch == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted.push_back(ch);
+        }
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
+std::optional<std::string> read_command_stdout(const std::string& command) {
+    FILE* pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+
+    std::string output;
+    std::array<char, 4096> buffer{};
+    while (true) {
+        const std::size_t read = std::fread(buffer.data(), 1, buffer.size(), pipe);
+        if (read > 0) {
+            output.append(buffer.data(), read);
+        }
+        if (read < buffer.size()) {
+            break;
+        }
+    }
+
+    const int status = pclose(pipe);
+    if (status != 0) {
+        return std::nullopt;
+    }
+    return output;
+}
+
+double parse_frame_rate(std::string_view text) {
+    const std::size_t split = text.find('/');
+    if (split == std::string_view::npos) {
+        const double value = std::atof(std::string{text}.c_str());
+        return value > 0.0 ? value : 30.0;
+    }
+
+    const double numerator = std::atof(std::string{text.substr(0, split)}.c_str());
+    const double denominator = std::atof(std::string{text.substr(split + 1)}.c_str());
+    if (numerator <= 0.0 || denominator <= 0.0) {
+        return 30.0;
+    }
+    return numerator / denominator;
+}
+
+bool load_video_channel(const std::string& path, VideoChannel& out) {
+    const std::string quoted_path = shell_quote(path);
+    const std::string probe_command = "ffprobe -v error -select_streams v:0 "
+                                      "-show_entries stream=width,height,avg_frame_rate "
+                                      "-of default=noprint_wrappers=1 " +
+                                      quoted_path;
+    const std::optional<std::string> probe_output = read_command_stdout(probe_command);
+    if (!probe_output.has_value()) {
+        std::cerr << "ffprobe failed for " << path << '\n';
+        return false;
+    }
+
+    int width = 0;
+    int height = 0;
+    double frames_per_second = 30.0;
+    std::size_t offset = 0;
+    while (offset < probe_output->size()) {
+        const std::size_t end = probe_output->find('\n', offset);
+        const std::string_view line{probe_output->data() + offset,
+                                    (end == std::string::npos ? probe_output->size() : end) -
+                                        offset};
+        if (line.starts_with("width=")) {
+            width = std::atoi(std::string{line.substr(6)}.c_str());
+        } else if (line.starts_with("height=")) {
+            height = std::atoi(std::string{line.substr(7)}.c_str());
+        } else if (line.starts_with("avg_frame_rate=")) {
+            frames_per_second = parse_frame_rate(line.substr(15));
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        offset = end + 1;
+    }
+
+    if (width <= 0 || height <= 0) {
+        std::cerr << "could not determine video dimensions for " << path << '\n';
+        return false;
+    }
+
+    const std::string decode_command =
+        "ffmpeg -v error -i " + quoted_path + " -f rawvideo -pix_fmt rgba -";
+    const std::optional<std::string> raw_video = read_command_stdout(decode_command);
+    if (!raw_video.has_value()) {
+        std::cerr << "ffmpeg decode failed for " << path << '\n';
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    if (frame_bytes == 0 || raw_video->size() < frame_bytes) {
+        std::cerr << "video has no decoded frames: " << path << '\n';
+        return false;
+    }
+
+    const std::size_t frame_count = raw_video->size() / frame_bytes;
+    out.width = width;
+    out.height = height;
+    out.frames_per_second = frames_per_second;
+    out.frames.clear();
+    out.frames.reserve(frame_count);
+
+    for (std::size_t frame = 0; frame < frame_count; ++frame) {
+        std::vector<std::uint32_t> pixels;
+        pixels.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+        const auto* bytes =
+            reinterpret_cast<const std::uint8_t*>(raw_video->data() + frame * frame_bytes);
+        for (std::size_t pixel = 0; pixel < pixels.size(); ++pixel) {
+            const std::uint8_t r = bytes[pixel * 4U + 0U];
+            const std::uint8_t g = bytes[pixel * 4U + 1U];
+            const std::uint8_t b = bytes[pixel * 4U + 2U];
+            const std::uint8_t a = bytes[pixel * 4U + 3U];
+            pixels[pixel] = (static_cast<std::uint32_t>(a) << 24U) |
+                            (static_cast<std::uint32_t>(b) << 16U) |
+                            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+        }
+        out.frames.push_back(std::move(pixels));
+    }
+
+    return true;
+}
+
+void update_video_channels(ast::ChannelSet& channels,
+                           const std::array<VideoChannel, 4>& video_channels, double time) {
+    for (std::size_t i = 0; i < video_channels.size(); ++i) {
+        const VideoChannel& video = video_channels[i];
+        if (!video.loaded()) {
+            continue;
+        }
+
+        const auto frame_index =
+            static_cast<std::size_t>(static_cast<long long>(time * video.frames_per_second) %
+                                     static_cast<long long>(video.frames.size()));
+        channels.image[i].width = video.width;
+        channels.image[i].height = video.height;
+        channels.image[i].pixels.clear();
+        channels.image[i].external_pixels = &video.frames[frame_index];
+    }
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -635,7 +818,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (args.dry_run && !has_channel_paths(args) && !has_buffer_paths(args)) {
+    if (args.dry_run && !has_channel_paths(args) && !has_video_paths(args) &&
+        !has_buffer_paths(args)) {
         std::cout << "ok: assembled " << args.program_path << '\n';
         return 0;
     }
@@ -664,10 +848,24 @@ int main(int argc, char** argv) {
         }
     }
 
+    std::array<VideoChannel, 4> video_channels;
+    for (std::size_t i = 0; i < args.video_paths.size(); ++i) {
+        if (!args.video_paths[i].empty() &&
+            !load_video_channel(args.video_paths[i], video_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    update_video_channels(channels, video_channels, 0.0);
+
     if (args.dry_run) {
         std::cout << "ok: assembled " << args.program_path;
         if (has_channel_paths(args)) {
             std::cout << " and loaded image channels";
+        }
+        if (has_video_paths(args)) {
+            std::cout << " and loaded video channels";
         }
         if (has_buffer_paths(args)) {
             std::cout << " and assembled buffer passes";
@@ -688,6 +886,7 @@ int main(int argc, char** argv) {
         const auto measure_start = std::chrono::steady_clock::now();
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
+            update_video_channels(channels, video_channels, static_cast<double>(time));
             if (use_buffers) {
                 render_pipeline(args, assembled.program, buffer_programs, channels,
                                 previous_buffers, current_buffers, frame, time, 1.0F / 60.0F,
@@ -818,6 +1017,7 @@ int main(int argc, char** argv) {
         const auto now = std::chrono::steady_clock::now();
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
+        update_video_channels(channels, video_channels, static_cast<double>(elapsed.count()));
         previous_frame_time = now;
         fps_accumulator += std::max(delta.count(), 0.0F);
         ++fps_frame_count;

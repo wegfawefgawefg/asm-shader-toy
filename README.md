@@ -49,6 +49,16 @@ Image inputs can be loaded into channels:
 ./build/asm-shader-toy my.asm --channel0 image.png --channel1 mask.jpg
 ```
 
+Video inputs can also be loaded into channels when `ffmpeg` and `ffprobe` are
+available:
+
+```sh
+./build/asm-shader-toy examples/video/video_channel.asm \
+  --video0 examples/assets/video/testsrc_160x90.mp4 \
+  --size 160x90 \
+  --scale 4
+```
+
 Headless validation:
 
 ```sh
@@ -69,8 +79,8 @@ Multi-file programs use `.include` with paths relative to the including file:
 ```
 
 See [examples/README.md](examples/README.md) for runnable examples covering
-time, mouse, image channels, multi-image mixing, includes, and a planet/sphere
-visual.
+time, mouse, image/video channels, buffers, multi-image mixing, includes, and a
+planet/sphere visual.
 
 Dedicated multi-file example:
 

@@ -16,6 +16,10 @@ Run from the repository root after building:
   --buffer0 examples/buffers/life_buffer.asm \
   --size gba \
   --scale 4
+./build/asm-shader-toy examples/video/video_channel.asm \
+  --video0 examples/assets/video/testsrc_160x90.mp4 \
+  --size 160x90 \
+  --scale 4
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.
@@ -35,8 +39,8 @@ Folders:
 - `perf/`: intentionally heavy benchmark shaders.
 - `raymarch/`: sphere/planet-style visuals.
 - `common/`: local includes for examples.
-- `assets/`: image assets, plus a future video fixture.
-- `video/`: future video-channel sketch and notes.
+- `assets/`: image assets, plus a tiny video fixture.
+- `video/`: video-channel example and notes.
 
 Validate without opening windows:
 
@@ -66,10 +70,9 @@ contains the include:
 scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 `tex1_r`, and `tmp0`.
 
-The current runner supports static image channels and four feedback buffer
-passes. Webcam, video, and audio channels are planned but not implemented yet.
-See `examples/video/README.md` for the included MP4 fixture and future command
-shape.
+The current runner supports static image channels, video channels decoded
+through local `ffmpeg`/`ffprobe`, and four feedback buffer passes. Webcam and
+audio channels are planned but not implemented yet.
 
 `raymarch/pixelated_planet.asm` is adapted from the CC0 Godot Shaders post
 "3D Pixelated Planet", which credits the YouTube short as inspiration.

@@ -1,9 +1,9 @@
-; Future video-channel sketch.
-;
-; This file is intentionally not part of validate_examples.sh because
-; --video0 is not implemented yet. Once video channels exist, this should
-; sample the current video frame through the same tex instruction used by
-; static images.
+; Video-channel example.
+; Run with:
+; ./build/asm-shader-toy examples/video/video_channel.asm \
+;   --video0 examples/assets/video/testsrc_160x90.mp4 \
+;   --size 160x90 \
+;   --scale 4
 
 .include <std/screen.inc>
 
@@ -21,4 +21,3 @@ mul color_r, tex0_r, tmp2
 mul color_g, tex0_g, tmp2
 mul color_b, tex0_b, tmp2
 out color_r, color_g, color_b, tex0_a
-

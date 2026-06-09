@@ -57,10 +57,11 @@ to name scratch registers.
 
 ## Channels
 
-Up to four static image inputs can be loaded:
+Up to four static image or video inputs can be loaded:
 
 ```sh
 ./build/asm-shader-toy program.asm --channel0 albedo.png --channel1 mask.jpg
+./build/asm-shader-toy program.asm --video0 clip.mp4
 ```
 
 Sampling is explicit:
@@ -76,6 +77,8 @@ Current behavior:
 
 - channels `0..3`
 - PNG/JPEG and any other format supported by local SDL2_image
+- video channels through `--video0` through `--video3`, decoded at startup with
+  local `ffmpeg` and `ffprobe`
 - feedback buffers through `--buffer0` through `--buffer3`
 - normalized `u/v`
 - clamped edges
@@ -111,20 +114,18 @@ Next channel support:
 
 Later channel support:
 
-- video file channel
 - generated noise texture channel
 - keyboard texture channel compatible with common Shadertoy keyboard examples
 - audio FFT/waveform channel
 - webcam or microphone only if the platform path stays boring
 
-There is already a tiny generated video fixture for that future work:
+There is a tiny generated video fixture:
 
 ```text
 examples/assets/video/testsrc_160x90.mp4
 ```
 
-See `examples/video/future_video_channel.asm` for the intended shader-side
-shape. It is not runnable until a video channel provider exists.
+See `examples/video/video_channel.asm` for a runnable video channel example.
 
 The important constraint is that channel sampling should stay explicit. A fake
 assembly program should make memory and texture access visible instead of
