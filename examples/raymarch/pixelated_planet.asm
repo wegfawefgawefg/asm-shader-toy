@@ -25,24 +25,32 @@ add tmp2, tmp2, tmp3
 lt tmp4, tmp2, 0.86
 jnz tmp4, planet
 
-; Black space with sparse diagonal streaks.
-mul tmp5, pos_x, 11.0
-mul tmp6, pos_y, 19.0
-add tmp5, tmp5, tmp6
-sub tmp5, tmp5, time
-sin tmp5, tmp5
-gt tmp5, tmp5, 0.935
-jnz tmp5, star_gate
+; Black space with sparse unprojected pixel stars. No loops: just a cheap
+; quantized-cell hash and a tiny local-cell test.
+div tmp5, px, 18.0
+floor tmp5, tmp5
+div tmp6, py, 15.0
+floor tmp6, tmp6
+mul tmp7, tmp5, 12.989
+mul tmp8, tmp6, 78.233
+add tmp7, tmp7, tmp8
+sin tmp7, tmp7
+gt tmp7, tmp7, 0.93
+jnz tmp7, star_cell
 out 0.0, 0.0, 0.0, 1.0
 ret
 
-star_gate:
-mul tmp6, pos_x, 41.0
-mul tmp7, pos_y, -7.0
-add tmp6, tmp6, tmp7
-sin tmp6, tmp6
-gt tmp6, tmp6, 0.82
-jnz tmp6, star
+star_cell:
+mod tmp7, px, 18.0
+lt tmp7, tmp7, 2.0
+jnz tmp7, star_cell_y
+out 0.0, 0.0, 0.0, 1.0
+ret
+
+star_cell_y:
+mod tmp8, py, 15.0
+lt tmp8, tmp8, 2.0
+jnz tmp8, star
 out 0.0, 0.0, 0.0, 1.0
 ret
 
@@ -72,15 +80,17 @@ mul tmp13, tmp6, tmp11
 mul tmp14, tmp7, tmp10
 sub tmp14, tmp14, tmp13
 
-; Light from the right/front. Quantized for chunky bands.
-mul tmp15, tmp6, 0.78
-mul tmp3, tmp7, 0.42
+; Light from up/right, leaning slightly toward the camera.
+mul tmp15, tmp6, 0.58
+mul tmp3, tmp8, -0.42
 add tmp15, tmp15, tmp3
-add tmp15, tmp15, 0.26
+mul tmp3, tmp7, 0.52
+add tmp15, tmp15, tmp3
+add tmp15, tmp15, 0.18
 max tmp15, tmp15, 0.0
-mul tmp15, tmp15, 7.0
+mul tmp15, tmp15, 6.0
 floor tmp15, tmp15
-div tmp15, tmp15, 7.0
+div tmp15, tmp15, 6.0
 
 ; Procedural terrain mask from rotated coords.
 mul color_a, tmp12, 8.0
@@ -100,7 +110,16 @@ mul tmp3, tmp14, 13.0
 mul tmp4, tmp8, 3.0
 add tmp3, tmp3, tmp4
 sin tmp3, tmp3
-mul tmp3, tmp3, 0.25
+mul tmp3, tmp3, 0.20
+add color_a, color_a, tmp3
+
+mul tmp3, tmp12, 21.0
+mul tmp4, tmp14, -4.0
+add tmp3, tmp3, tmp4
+mul tmp4, tmp8, 12.0
+add tmp3, tmp3, tmp4
+sin tmp3, tmp3
+mul tmp3, tmp3, 0.15
 add color_a, color_a, tmp3
 add color_a, color_a, 0.5
 
@@ -128,28 +147,77 @@ mov color_g, 0.76
 mov color_b, 0.58
 
 cloud_test:
-; Bright day-side cloud masses, mostly on the right.
-gt tmp4, tmp15, 0.91
-jnz tmp4, cloud
+; Separate cloud shell, slightly larger than the planet sphere. It reuses the
+; same kind of cheap layered sine noise, but sampled from shell coords.
+div tmp3, tmp0, 1.02
+div tmp4, tmp1, 1.02
+mul tmp5, tmp3, tmp3
+mul tmp6, tmp4, tmp4
+add tmp5, tmp5, tmp6
+sub tmp5, 1.0, tmp5
+max tmp5, tmp5, 0.0
+sqrt tmp5, tmp5
 
-mul tmp3, tmp12, 10.0
-mul tmp4, tmp8, 8.0
+mul tmp6, tmp3, tmp10
+mul tmp7, tmp5, tmp11
+add tmp6, tmp6, tmp7
+mul tmp7, tmp3, tmp11
+mul tmp9, tmp5, tmp10
+sub tmp7, tmp9, tmp7
+
+mul tmp9, tmp6, 11.0
+mul tmp3, tmp4, 7.0
+add tmp9, tmp9, tmp3
+mul tmp3, time, 0.45
+add tmp9, tmp9, tmp3
+sin tmp9, tmp9
+mul tmp9, tmp9, 0.42
+
+mul tmp3, tmp7, -8.0
+mul tmp4, tmp4, 13.0
 add tmp3, tmp3, tmp4
-add tmp3, tmp3, time
 sin tmp3, tmp3
-gt tmp4, tmp3, 0.42
-jnz tmp4, maybe_cloud
+mul tmp3, tmp3, 0.34
+add tmp9, tmp9, tmp3
+
+mul tmp3, tmp6, 23.0
+mul tmp4, tmp7, 5.0
+add tmp3, tmp3, tmp4
+sin tmp3, tmp3
+mul tmp3, tmp3, 0.24
+add tmp9, tmp9, tmp3
+add tmp9, tmp9, 0.5
+
+gt tmp4, tmp9, 0.70
+jnz tmp4, cloud_hash_gate
+jmp shade
+
+cloud_hash_gate:
+mul tmp3, tmp6, 37.0
+mul tmp4, tmp7, 17.0
+add tmp3, tmp3, tmp4
+sin tmp3, tmp3
+gt tmp3, tmp3, -0.15
+jnz tmp3, maybe_cloud
 jmp shade
 
 maybe_cloud:
-gt tmp4, tmp15, 0.5
+gt tmp4, tmp15, 0.38
 jnz tmp4, cloud
 jmp shade
 
 cloud:
-mov color_r, 0.92
-mov color_g, 0.96
-mov color_b, 0.94
+gt tmp4, tmp15, 0.62
+jnz tmp4, bright_cloud
+mov color_r, 0.50
+mov color_g, 0.54
+mov color_b, 0.62
+jmp shade
+
+bright_cloud:
+mov color_r, 0.90
+mov color_g, 0.94
+mov color_b, 0.92
 
 shade:
 ; Night side goes purple/blue, day side goes bright.
@@ -173,17 +241,20 @@ add color_g, color_g, 0.07
 add color_b, color_b, 0.08
 
 dither:
-; Vertical-ish stipple near the terminator.
-sub tmp3, tmp15, 0.42
+; Sparse hash stipple near the terminator. This avoids horizontal scan bands.
+sub tmp3, tmp15, 0.36
 abs tmp3, tmp3
-lt tmp3, tmp3, 0.20
+lt tmp3, tmp3, 0.13
 jnz tmp3, stipple_test
 out color_r, color_g, color_b, 1.0
 ret
 
 stipple_test:
-mod tmp4, py, 4.0
-lt tmp4, tmp4, 1.0
+mul tmp4, px, 17.0
+mul tmp5, py, 31.0
+add tmp4, tmp4, tmp5
+sin tmp4, tmp4
+gt tmp4, tmp4, 0.62
 jnz tmp4, stipple
 out color_r, color_g, color_b, 1.0
 ret
