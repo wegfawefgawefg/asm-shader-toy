@@ -2,6 +2,8 @@
 #include "ast/runtime.hpp"
 
 #include <SDL.h>
+#include <SDL_image.h>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -20,6 +22,7 @@ struct Args {
     int height = 160;
     int scale = 4;
     int max_steps = 4096;
+    std::array<std::string, 4> channel_paths;
 };
 
 std::optional<std::pair<int, int>> parse_size(std::string_view text) {
@@ -87,6 +90,16 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--channel0" || arg == "--channel1" || arg == "--channel2" ||
+            arg == "--channel3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
         if (!arg.empty() && arg.front() == '-') {
             return std::nullopt;
         }
@@ -98,7 +111,40 @@ std::optional<Args> parse_args(int argc, char** argv) {
 
 void print_usage() {
     std::cerr << "usage: asm-shader-toy [program.asm] [--size 240x160] [--scale N]\n"
-              << "       --dimscale is accepted as an alias for --scale\n";
+              << "       --dimscale is accepted as an alias for --scale\n"
+              << "       --channel0 path through --channel3 path load image inputs\n";
+}
+
+bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
+    SDL_Surface* loaded = IMG_Load(path.c_str());
+    if (loaded == nullptr) {
+        std::cerr << "IMG_Load failed for " << path << ": " << IMG_GetError() << '\n';
+        return false;
+    }
+
+    SDL_Surface* converted = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_ABGR8888, 0);
+    SDL_FreeSurface(loaded);
+    if (converted == nullptr) {
+        std::cerr << "SDL_ConvertSurfaceFormat failed for " << path << ": " << SDL_GetError()
+                  << '\n';
+        return false;
+    }
+
+    out.width = converted->w;
+    out.height = converted->h;
+    out.pixels.resize(static_cast<std::size_t>(out.width * out.height));
+    const auto* bytes = static_cast<const std::uint8_t*>(converted->pixels);
+    for (int y = 0; y < out.height; ++y) {
+        const auto* row = reinterpret_cast<const std::uint32_t*>(
+            bytes + static_cast<std::size_t>(y) * static_cast<std::size_t>(converted->pitch));
+        for (int x = 0; x < out.width; ++x) {
+            out.pixels[static_cast<std::size_t>(y * out.width + x)] =
+                row[static_cast<std::size_t>(x)];
+        }
+    }
+
+    SDL_FreeSurface(converted);
+    return true;
 }
 
 } // namespace
@@ -125,11 +171,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG) == 0) {
+        std::cerr << "IMG_Init failed: " << IMG_GetError() << '\n';
+        SDL_Quit();
+        return 1;
+    }
+
+    ast::ChannelSet channels;
+    for (std::size_t i = 0; i < args.channel_paths.size(); ++i) {
+        if (!args.channel_paths[i].empty() &&
+            !load_channel_image(args.channel_paths[i], channels.image[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+
     SDL_Window* window =
         SDL_CreateWindow("asm-shader-toy", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                          args.width * args.scale, args.height * args.scale, SDL_WINDOW_SHOWN);
     if (window == nullptr) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << '\n';
+        IMG_Quit();
         SDL_Quit();
         return 1;
     }
@@ -142,6 +205,7 @@ int main(int argc, char** argv) {
     if (renderer == nullptr) {
         std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << '\n';
         SDL_DestroyWindow(window);
+        IMG_Quit();
         SDL_Quit();
         return 1;
     }
@@ -152,6 +216,7 @@ int main(int argc, char** argv) {
         std::cerr << "SDL_CreateTexture failed: " << SDL_GetError() << '\n';
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
+        IMG_Quit();
         SDL_Quit();
         return 1;
     }
@@ -225,6 +290,7 @@ int main(int argc, char** argv) {
         frame_inputs.year = year;
         frame_inputs.month = month;
         frame_inputs.day = day;
+        frame_inputs.channels = &channels;
         ast::render_frame(assembled.program, frame_inputs, pixels, ast::RunLimits{args.max_steps});
         ++frame;
 
@@ -238,6 +304,7 @@ int main(int argc, char** argv) {
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    IMG_Quit();
     SDL_Quit();
     return 0;
 }

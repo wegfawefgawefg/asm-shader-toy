@@ -31,6 +31,7 @@ enum class Op {
     Jnz,
     Out,
     Out8,
+    Tex,
     Ret,
 };
 

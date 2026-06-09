@@ -82,6 +82,52 @@ void test_frame_inputs_seed_registers() {
     require(color.a == 255, "mouse-down register is seeded");
 }
 
+void test_named_inputs_and_aliases() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .alias u, r16
+        .alias v, r17
+        norm u, px, width
+        norm v, py, height
+        out u, v, mouse_down, 1.0
+    )");
+
+    require(result.ok(), "named input program assembles");
+    const ast::Rgba color =
+        ast::run_pixel(result.program, ast::PixelInputs{120, 80, 240, 160, 0.0F});
+    require(color.r == 128, "named px/width aliases work");
+    require(color.g == 128, "named py/height aliases work");
+}
+
+void test_input_aliases_are_read_only() {
+    const ast::AssembleResult result = ast::assemble_source("mov time, 1.0\n");
+    require(!result.ok(), "input aliases cannot be destinations");
+}
+
+void test_texture_sampling() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        tex r16, r17, r18, r19, 0, 0.75, 0.25
+        out r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "texture program assembles");
+
+    ast::ChannelSet channels;
+    channels.image[0].width = 2;
+    channels.image[0].height = 2;
+    channels.image[0].pixels = {
+        0xFF0000FFU,
+        0xFF00FF00U,
+        0xFFFF0000U,
+        0xFFFFFFFFU,
+    };
+
+    ast::PixelInputs inputs;
+    inputs.channels = &channels;
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    require(color.r == 0 && color.g == 255 && color.b == 0 && color.a == 255,
+            "texture sampler reads channel pixels");
+}
+
 void test_example_assembles() {
     if (!std::filesystem::exists("examples/plasma.asm")) {
         return;
@@ -104,6 +150,9 @@ int main() {
     test_labels_and_constants();
     test_unary_math_uses_destination_and_source();
     test_frame_inputs_seed_registers();
+    test_named_inputs_and_aliases();
+    test_input_aliases_are_read_only();
+    test_texture_sampling();
     test_example_assembles();
     test_diagnostics();
     return 0;

@@ -20,10 +20,16 @@ struct RawInstruction {
     std::string file;
 };
 
+struct Alias {
+    int reg = 0;
+    bool writable = false;
+};
+
 struct ParseState {
     std::vector<RawInstruction> raw;
     std::map<std::string, int> labels;
     std::map<std::string, float> constants;
+    std::map<std::string, Alias> aliases;
     std::vector<Diagnostic> diagnostics;
     std::set<std::filesystem::path> include_stack;
 };
@@ -122,6 +128,29 @@ std::optional<int> parse_register(std::string_view token) {
     return value;
 }
 
+void seed_builtin_aliases(ParseState& state) {
+    state.aliases = {
+        {"px", Alias{0, false}},
+        {"pixel_x", Alias{0, false}},
+        {"py", Alias{1, false}},
+        {"pixel_y", Alias{1, false}},
+        {"time", Alias{2, false}},
+        {"width", Alias{3, false}},
+        {"height", Alias{4, false}},
+        {"mouse_x", Alias{5, false}},
+        {"mouse_y", Alias{6, false}},
+        {"mouse_down", Alias{7, false}},
+        {"mouse_click_x", Alias{8, false}},
+        {"mouse_click_y", Alias{9, false}},
+        {"frame", Alias{10, false}},
+        {"time_delta", Alias{11, false}},
+        {"wall_seconds", Alias{12, false}},
+        {"date_year", Alias{13, false}},
+        {"date_month", Alias{14, false}},
+        {"date_day", Alias{15, false}},
+    };
+}
+
 void add_diag(ParseState& state, const std::string& file, int line, std::string message) {
     state.diagnostics.push_back(Diagnostic{file, line, std::move(message)});
 }
@@ -210,6 +239,24 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
             continue;
         }
 
+        if (directive == ".alias") {
+            if (tokens.size() != 3) {
+                add_diag(state, file, line_no, ".alias expects name and register");
+                continue;
+            }
+            const auto reg = parse_register(lower(tokens[2]));
+            if (!reg.has_value()) {
+                add_diag(state, file, line_no, ".alias expects a register like r16");
+                continue;
+            }
+            if (*reg < 16) {
+                add_diag(state, file, line_no, ".alias may only name scratch registers r16..r31");
+                continue;
+            }
+            state.aliases[lower(tokens[1])] = Alias{*reg, true};
+            continue;
+        }
+
         RawInstruction raw;
         raw.op = directive;
         raw.line = line_no;
@@ -228,7 +275,7 @@ std::optional<Op> parse_op(std::string_view op) {
         {"abs", Op::Abs}, {"floor", Op::Floor}, {"fract", Op::Fract}, {"min", Op::Min},
         {"max", Op::Max}, {"mod", Op::Mod},     {"norm", Op::Norm},   {"lt", Op::Lt},
         {"gt", Op::Gt},   {"eq", Op::Eq},       {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
-        {"out", Op::Out}, {"out8", Op::Out8},   {"ret", Op::Ret},
+        {"out", Op::Out}, {"out8", Op::Out8},   {"tex", Op::Tex},     {"ret", Op::Ret},
     };
 
     const auto it = ops.find(op);
@@ -269,6 +316,8 @@ int expected_operands(Op op) {
     case Op::Out:
     case Op::Out8:
         return 4;
+    case Op::Tex:
+        return 7;
     }
     return 0;
 }
@@ -294,6 +343,8 @@ bool operand_must_be_register(Op op, int index) {
     case Op::Gt:
     case Op::Eq:
         return index == 0;
+    case Op::Tex:
+        return index >= 0 && index <= 3;
     case Op::Jmp:
     case Op::Jnz:
     case Op::Out:
@@ -309,6 +360,14 @@ std::optional<Operand> parse_operand(ParseState& state, const RawInstruction& ra
     const std::string& token = raw.args[static_cast<std::size_t>(index)];
     if (const auto reg = parse_register(token); reg.has_value()) {
         return Operand{OperandKind::Register, *reg, 0.0F};
+    }
+
+    if (const auto alias = state.aliases.find(token); alias != state.aliases.end()) {
+        if (operand_must_be_register(op, index) && !alias->second.writable) {
+            add_diag(state, raw.file, raw.line, "input alias is read-only: " + token);
+            return std::nullopt;
+        }
+        return Operand{OperandKind::Register, alias->second.reg, 0.0F};
     }
 
     if (operand_must_be_register(op, index)) {
@@ -381,6 +440,7 @@ Program lower_program(ParseState& state) {
 
 AssembleResult assemble_source(std::string source, std::string file_name) {
     ParseState state;
+    seed_builtin_aliases(state);
     parse_source(state, source, file_name, std::filesystem::current_path());
     AssembleResult result;
     result.program = lower_program(state);
@@ -390,6 +450,7 @@ AssembleResult assemble_source(std::string source, std::string file_name) {
 
 AssembleResult assemble_file(const std::filesystem::path& path) {
     ParseState state;
+    seed_builtin_aliases(state);
     const std::filesystem::path canonical =
         std::filesystem::weakly_canonical(path).lexically_normal();
     std::ifstream input(canonical);

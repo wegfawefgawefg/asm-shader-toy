@@ -8,6 +8,8 @@
 
 namespace ast {
 
+struct ChannelSet;
+
 struct PixelInputs {
     int x = 0;
     int y = 0;
@@ -25,6 +27,7 @@ struct PixelInputs {
     int year = 1970;
     int month = 1;
     int day = 1;
+    const ChannelSet* channels = nullptr;
 };
 
 struct FrameInputs {
@@ -42,6 +45,7 @@ struct FrameInputs {
     int year = 1970;
     int month = 1;
     int day = 1;
+    const ChannelSet* channels = nullptr;
 };
 
 struct RunLimits {
@@ -53,6 +57,20 @@ struct Rgba {
     std::uint8_t g = 0;
     std::uint8_t b = 0;
     std::uint8_t a = 255;
+};
+
+struct ImageChannel {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint32_t> pixels;
+
+    [[nodiscard]] bool loaded() const {
+        return width > 0 && height > 0 && !pixels.empty();
+    }
+};
+
+struct ChannelSet {
+    std::array<ImageChannel, 4> image;
 };
 
 using Registers = std::array<float, register_count>;

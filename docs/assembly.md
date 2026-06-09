@@ -32,6 +32,26 @@ Constants are file-global after parsing.
 mul r8, r2, tau
 ```
 
+## Aliases
+
+Built-in input aliases can be used as source operands:
+
+```asm
+norm r16, px, width
+add r17, time, frame
+```
+
+Input aliases are read-only. User aliases may name scratch registers:
+
+```asm
+.alias u, r16
+.alias color_r, r17
+norm u, px, width
+mov color_r, u
+```
+
+User aliases may only target `r16..r31`.
+
 ## Labels
 
 Labels define branch targets.
@@ -71,6 +91,29 @@ Initial registers:
 
 Scratch registers start at `r16`.
 
+Named aliases for input registers:
+
+```text
+px              r0
+pixel_x         r0
+py              r1
+pixel_y         r1
+time            r2
+width           r3
+height          r4
+mouse_x         r5
+mouse_y         r6
+mouse_down      r7
+mouse_click_x   r8
+mouse_click_y   r9
+frame           r10
+time_delta      r11
+wall_seconds    r12
+date_year       r13
+date_month      r14
+date_day        r15
+```
+
 ## Instructions
 
 Instruction operands may be registers, constants, or numeric immediates unless
@@ -99,8 +142,13 @@ jmp label
 jnz test, label
 out r, g, b, a      ; normalized 0..1 channels
 out8 r, g, b, a     ; byte 0..255 channels
+tex dr, dg, db, da, channel, u, v
 ret
 ```
 
 `out` does not stop execution. Use `ret` if the program should end immediately
 after writing a color.
+
+`tex` samples one of the four image channels loaded by `--channel0` through
+`--channel3`. Coordinates are normalized `0..1`, clamped, nearest-neighbor, and
+returned as normalized float channels in the four destination registers.

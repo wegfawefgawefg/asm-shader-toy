@@ -44,6 +44,50 @@ r15  iDate.z, local day
 
 Scratch registers start at `r16`.
 
+The same inputs also have source aliases:
+
+```text
+px, pixel_x, py, pixel_y, time, width, height,
+mouse_x, mouse_y, mouse_down, mouse_click_x, mouse_click_y,
+frame, time_delta, wall_seconds, date_year, date_month, date_day
+```
+
+Input aliases are read-only. Use `.alias name, r16` through `.alias name, r31`
+to name scratch registers.
+
+## Image Channels
+
+Up to four static image inputs can be loaded:
+
+```sh
+./build/asm-shader-toy program.asm --channel0 albedo.png --channel1 mask.jpg
+```
+
+Sampling is explicit:
+
+```asm
+.alias u, r16
+.alias v, r17
+.alias cr, r18
+.alias cg, r19
+.alias cb, r20
+.alias ca, r21
+
+norm u, px, width
+norm v, py, height
+tex cr, cg, cb, ca, 0, u, v
+out cr, cg, cb, ca
+```
+
+Current behavior:
+
+- channels `0..3`
+- PNG/JPEG and any other format supported by local SDL2_image
+- normalized `u/v`
+- clamped edges
+- nearest-neighbor sampling
+- sampled color returns normalized `0..1` RGBA floats
+
 ## Expansion Plan
 
 Near-term scalar inputs:
@@ -54,12 +98,10 @@ Near-term scalar inputs:
 - pause/reset controls for stable experiments
 - mouse wheel and right/middle buttons
 
-First channel support:
+Next channel support:
 
-- one static image loaded with `--channel0 path.png`
-- nearest and linear sampling modes
-- wrap and clamp address modes
-- instructions like `tex dst_r, dst_g, dst_b, dst_a, channel, u, v`
+- linear sampling mode
+- wrap address mode
 - channel metadata registers or query instructions for width, height, time
 
 Later channel support:
@@ -75,4 +117,3 @@ Later channel support:
 The important constraint is that channel sampling should stay explicit. A fake
 assembly program should make memory and texture access visible instead of
 pretending it is normal arithmetic.
-

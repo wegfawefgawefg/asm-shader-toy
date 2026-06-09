@@ -26,6 +26,12 @@ Or run a specific program:
 ./build/asm-shader-toy examples/plasma.asm --size 240x160 --dimscale 4
 ```
 
+Image inputs can be loaded into channels:
+
+```sh
+./build/asm-shader-toy my.asm --channel0 image.png --channel1 mask.jpg
+```
+
 `--scale` and `--dimscale` are aliases. The interpreter always renders the
 intermediate texture size; SDL handles scaling that texture into the window.
 
@@ -42,9 +48,11 @@ Every pixel starts with these registers:
 - `r6`: mouse y, reserved
 - `r7`: mouse down
 
-Registers `r8` through `r15` hold more frame inputs. Scratch registers start at
-`r16`. Colors are written with
+Registers `r8` through `r15` hold more frame inputs. Built-in names like `px`,
+`py`, `time`, `width`, `height`, and `mouse_down` can be used instead of raw
+input registers. Scratch registers start at `r16`. Colors are written with
 `out` for normalized `0..1` channels or `out8` for byte `0..255` channels.
 
-See [docs/scope.md](docs/scope.md), [docs/assembly.md](docs/assembly.md), and
-[docs/inputs.md](docs/inputs.md).
+See [docs/scope.md](docs/scope.md), [docs/assembly.md](docs/assembly.md),
+[docs/inputs.md](docs/inputs.md), and
+[docs/language-roadmap.md](docs/language-roadmap.md).

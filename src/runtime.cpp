@@ -33,6 +33,39 @@ float safe_div(float a, float b) {
     return a / b;
 }
 
+Rgba unpack_rgba(std::uint32_t pixel) {
+    return Rgba{static_cast<std::uint8_t>(pixel & 0xFFU),
+                static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU),
+                static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU),
+                static_cast<std::uint8_t>((pixel >> 24U) & 0xFFU)};
+}
+
+Rgba sample_channel(const ChannelSet* channels, int channel_index, float u, float v) {
+    if (channels == nullptr || channel_index < 0 ||
+        channel_index >= static_cast<int>(channels->image.size())) {
+        return Rgba{};
+    }
+
+    const ImageChannel& channel = channels->image[static_cast<std::size_t>(channel_index)];
+    if (!channel.loaded()) {
+        return Rgba{};
+    }
+
+    const float clamped_u = std::clamp(u, 0.0F, 1.0F);
+    const float clamped_v = std::clamp(v, 0.0F, 1.0F);
+    const int x =
+        std::clamp(static_cast<int>(std::floor(clamped_u * static_cast<float>(channel.width))), 0,
+                   channel.width - 1);
+    const int y =
+        std::clamp(static_cast<int>(std::floor(clamped_v * static_cast<float>(channel.height))), 0,
+                   channel.height - 1);
+    return unpack_rgba(channel.pixels[static_cast<std::size_t>(y * channel.width + x)]);
+}
+
+float byte_to_unorm(std::uint8_t value) {
+    return static_cast<float>(value) / 255.0F;
+}
+
 void seed_inputs(Registers& registers, const PixelInputs& inputs) {
     registers.fill(0.0F);
     registers[0] = static_cast<float>(inputs.x);
@@ -151,6 +184,15 @@ Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimit
             color = Rgba{pack_byte(value(0)), pack_byte(value(1)), pack_byte(value(2)),
                          pack_byte(value(3))};
             break;
+        case Op::Tex: {
+            const Rgba sample =
+                sample_channel(inputs.channels, static_cast<int>(value(4)), value(5), value(6));
+            dst(0) = byte_to_unorm(sample.r);
+            dst(1) = byte_to_unorm(sample.g);
+            dst(2) = byte_to_unorm(sample.b);
+            dst(3) = byte_to_unorm(sample.a);
+            break;
+        }
         case Op::Ret:
             return color;
         }
@@ -181,6 +223,7 @@ void render_frame(const Program& program, const FrameInputs& inputs,
             pixel.year = inputs.year;
             pixel.month = inputs.month;
             pixel.day = inputs.day;
+            pixel.channels = inputs.channels;
             pixels[static_cast<std::size_t>(y * inputs.width + x)] =
                 pack_rgba(run_pixel(program, pixel, limits));
         }

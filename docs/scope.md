@@ -38,7 +38,7 @@ The first optimization targets should be:
 - Dynamic indirect jumps.
 - Unbounded programs.
 - GPU shader generation.
-- Texture, video, cubemap, keyboard, webcam, microphone, or audio channel input.
+- Video, cubemap, keyboard, webcam, microphone, or audio channel input.
 - A polished editor UI.
 
 ## Open Design Questions
