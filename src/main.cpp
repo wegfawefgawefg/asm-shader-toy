@@ -21,6 +21,7 @@ struct Args {
     int width = 240;
     int height = 160;
     int scale = 4;
+    bool scale_set = false;
     int max_steps = 4096;
     int frames = -1;
     bool dry_run = false;
@@ -70,6 +71,9 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             args.width = size->first;
             args.height = size->second;
+            if (!args.scale_set) {
+                args.scale = 1;
+            }
             continue;
         }
         if (arg == "--scale" || arg == "--dimscale") {
@@ -81,6 +85,7 @@ std::optional<Args> parse_args(int argc, char** argv) {
             if (args.scale <= 0) {
                 return std::nullopt;
             }
+            args.scale_set = true;
             continue;
         }
         if (arg == "--max-steps") {

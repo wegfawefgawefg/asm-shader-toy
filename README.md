@@ -66,8 +66,10 @@ Dedicated multi-file example:
 ./build/asm-shader-toy examples/multifile/main.asm
 ```
 
-`--scale` and `--dimscale` are aliases. The interpreter always renders the
-intermediate texture size; SDL handles scaling that texture into the window.
+`--scale` and `--dimscale` are aliases. The default `240x160` render uses scale
+`4`; passing `--size` uses scale `1` unless you also pass `--scale`/`--dimscale`.
+The interpreter always renders the intermediate texture size; SDL handles
+scaling that texture into the window.
 
 ## Current Model
 
