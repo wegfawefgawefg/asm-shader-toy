@@ -1,35 +1,26 @@
 ; Default demo for asm-shader-toy.
 ; Built-in aliases: px, py, time, width, height.
 
-.const pi 3.1415926
-.const tau 6.2831853
-.alias u, r16
-.alias v, r17
-.alias wave_x, r18
-.alias wave_y, r19
-.alias plasma, r20
-.alias red, r21
-.alias green, r22
+.include "common/math.inc"
+.include "std/screen.inc"
 
-norm u, px, width
-norm v, py, height
-mul wave_x, u, tau
-mul wave_y, v, tau
+mul tmp0, uv_x, tau
+mul tmp1, uv_y, tau
 
-add plasma, wave_x, time
-sin plasma, plasma
+add color_r, tmp0, time
+sin color_r, color_r
 
-mul wave_y, time, 0.7
-add wave_y, v, wave_y
-cos wave_y, wave_y
+mul tmp1, time, 0.7
+add tmp1, uv_y, tmp1
+cos tmp1, tmp1
 
-add plasma, plasma, wave_y
-mul plasma, plasma, 0.5
-add plasma, plasma, 0.5
+add color_r, color_r, tmp1
+mul color_r, color_r, 0.5
+add color_r, color_r, 0.5
 
-mul red, u, 0.8
-add red, red, 0.1
-mul green, v, 0.6
-add green, green, 0.2
+mul color_g, uv_x, 0.8
+add color_g, color_g, 0.1
+mul color_b, uv_y, 0.6
+add color_b, color_b, 0.2
 
-out plasma, red, green, 1.0
+out color_r, color_g, color_b, 1.0

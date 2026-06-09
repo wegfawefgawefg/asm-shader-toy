@@ -1,82 +1,62 @@
 .include "common/math.inc"
-.include "common/screen.inc"
+.include "std/screen.inc"
 
-.alias aspect, r20
-.alias sx, r21
-.alias sy, r22
-.alias d2, r23
-.alias inside, r24
-.alias z2, r25
-.alias z, r26
-.alias nx, r27
-.alias ny, r28
-.alias nz, r29
-.alias light, r30
-.alias bands, r31
-.alias ocean, r32
-.alias clouds, r33
-.alias red, r34
-.alias green, r35
-.alias blue, r36
-.alias tmp, r37
+norm tmp0, width, height
+mul tmp1, pos_x, tmp0
+mov tmp2, pos_y
 
-norm aspect, width, height
-mul sx, cx, aspect
-mov sy, cy
-
-mul d2, sx, sx
-mul tmp, sy, sy
-add d2, d2, tmp
-lt inside, d2, 0.72
-jnz inside, shade
+mul tmp3, tmp1, tmp1
+mul tmp4, tmp2, tmp2
+add tmp3, tmp3, tmp4
+lt tmp5, tmp3, 0.72
+jnz tmp5, shade
 
 out 0.01, 0.015, 0.04, 1.0
 ret
 
 shade:
-sub z2, 0.72, d2
-sqrt z, z2
+sub tmp6, 0.72, tmp3
+sqrt tmp7, tmp6
 
-mov nx, sx
-mov ny, sy
-mov nz, z
+mov tmp8, tmp1
+mov tmp9, tmp2
+mov tmp10, tmp7
 
-mul light, nx, -0.35
-mul tmp, ny, -0.25
-add light, light, tmp
-mul tmp, nz, 0.9
-add light, light, tmp
-max light, light, 0.0
+mul tmp11, tmp8, -0.35
+mul tmp12, tmp9, -0.25
+add tmp11, tmp11, tmp12
+mul tmp12, tmp10, 0.9
+add tmp11, tmp11, tmp12
+max tmp11, tmp11, 0.0
 
-mul bands, sy, 10.0
-add bands, bands, time
-sin bands, bands
-mul bands, bands, 0.5
-add bands, bands, 0.5
+mul tmp12, tmp2, 10.0
+add tmp12, tmp12, time
+sin tmp12, tmp12
+mul tmp12, tmp12, 0.5
+add tmp12, tmp12, 0.5
 
-mul ocean, nx, 7.0
-add ocean, ocean, time
-sin ocean, ocean
-mul ocean, ocean, 0.5
-add ocean, ocean, 0.5
+mul tmp13, tmp8, 7.0
+add tmp13, tmp13, time
+sin tmp13, tmp13
+mul tmp13, tmp13, 0.5
+add tmp13, tmp13, 0.5
 
-mul clouds, nx, 13.0
-add clouds, clouds, sy
-add clouds, clouds, time
-sin clouds, clouds
-mul clouds, clouds, 0.5
-add clouds, clouds, 0.5
+mul tmp14, tmp8, 13.0
+add tmp14, tmp14, tmp2
+add tmp14, tmp14, time
+sin tmp14, tmp14
+mul tmp14, tmp14, 0.5
+add tmp14, tmp14, 0.5
 
-mul red, bands, 0.25
-add red, red, 0.05
-mul green, ocean, 0.45
-add green, green, 0.15
-mul blue, ocean, 0.75
-add blue, blue, clouds
-mul blue, blue, 0.45
+mul color_r, tmp12, 0.25
+add color_r, color_r, 0.05
+mul color_g, tmp13, 0.45
+add color_g, color_g, 0.15
+mul color_b, tmp13, 0.75
+add color_b, color_b, tmp14
+mul color_b, color_b, 0.45
 
-mul red, red, light
-mul green, green, light
-mul blue, blue, light
-out red, green, blue, 1.0
-
+mul color_r, color_r, tmp11
+mul color_g, color_g, tmp11
+mul color_b, color_b, tmp11
+out color_r, color_g, color_b, 1.0

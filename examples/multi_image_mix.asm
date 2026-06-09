@@ -1,39 +1,24 @@
-.include "common/screen.inc"
+.include "std/screen.inc"
 
-.alias ar, r20
-.alias ag, r21
-.alias ab, r22
-.alias aa, r23
-.alias br, r24
-.alias bg, r25
-.alias bb, r26
-.alias ba, r27
-.alias mixv, r28
-.alias inv, r29
-.alias red, r30
-.alias green, r31
-.alias blue, r32
+tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+tex tex1_r, tex1_g, tex1_b, tex1_a, 1, uv_x, uv_y
 
-tex ar, ag, ab, aa, 0, u, v
-tex br, bg, bb, ba, 1, u, v
+mul tmp0, time, 0.7
+sin tmp0, tmp0
+mul tmp0, tmp0, 0.5
+add tmp0, tmp0, 0.5
+sub tmp1, 1.0, tmp0
 
-mul mixv, time, 0.7
-sin mixv, mixv
-mul mixv, mixv, 0.5
-add mixv, mixv, 0.5
-sub inv, 1.0, mixv
+mul color_r, tex0_r, tmp1
+mul tex1_r, tex1_r, tmp0
+add color_r, color_r, tex1_r
 
-mul red, ar, inv
-mul br, br, mixv
-add red, red, br
+mul color_g, tex0_g, tmp1
+mul tex1_g, tex1_g, tmp0
+add color_g, color_g, tex1_g
 
-mul green, ag, inv
-mul bg, bg, mixv
-add green, green, bg
+mul color_b, tex0_b, tmp1
+mul tex1_b, tex1_b, tmp0
+add color_b, color_b, tex1_b
 
-mul blue, ab, inv
-mul bb, bb, mixv
-add blue, blue, bb
-
-out red, green, blue, 1.0
-
+out color_r, color_g, color_b, 1.0

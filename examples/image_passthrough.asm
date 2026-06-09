@@ -1,10 +1,4 @@
-.include "common/screen.inc"
+.include "std/screen.inc"
 
-.alias cr, r20
-.alias cg, r21
-.alias cb, r22
-.alias ca, r23
-
-tex cr, cg, cb, ca, 0, u, v
-out cr, cg, cb, ca
-
+tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+out tex0_r, tex0_g, tex0_b, tex0_a

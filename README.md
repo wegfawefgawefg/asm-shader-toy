@@ -36,7 +36,7 @@ Multi-file programs use `.include` with paths relative to the including file:
 
 ```asm
 .include "common/math.inc"
-.include "common/screen.inc"
+.include "std/screen.inc"
 ```
 
 See [examples/README.md](examples/README.md) for runnable examples covering

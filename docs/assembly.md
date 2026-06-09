@@ -52,6 +52,23 @@ mov color_r, u
 
 User aliases may only target `r16..r63`.
 
+For normal programs, prefer the standard include:
+
+```asm
+.include "std/screen.inc"
+```
+
+It defines conventional scratch aliases:
+
+```text
+uv_x, uv_y          normalized pixel coordinates
+pos_x, pos_y        centered coordinates, -1..1
+color_r..color_a    primary output color
+tex0_r..tex0_a      first sampled texture color
+tex1_r..tex1_a      second sampled texture color
+tmp0..tmp15         general temporaries
+```
+
 ## Labels
 
 Labels define branch targets.

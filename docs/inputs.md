@@ -66,17 +66,10 @@ Up to four static image inputs can be loaded:
 Sampling is explicit:
 
 ```asm
-.alias u, r16
-.alias v, r17
-.alias cr, r18
-.alias cg, r19
-.alias cb, r20
-.alias ca, r21
+.include "std/screen.inc"
 
-norm u, px, width
-norm v, py, height
-tex cr, cg, cb, ca, 0, u, v
-out cr, cg, cb, ca
+tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+out tex0_r, tex0_g, tex0_b, tex0_a
 ```
 
 Current behavior:
