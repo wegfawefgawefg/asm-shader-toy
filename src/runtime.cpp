@@ -233,7 +233,7 @@ void render_frame(const Program& program, const FrameInputs& inputs,
     const int total_pixels = inputs.width * inputs.height;
     const unsigned int hardware_threads = std::thread::hardware_concurrency();
     const int worker_count =
-        total_pixels >= 65536
+        total_pixels >= 4096
             ? std::max(1, std::min(inputs.height, static_cast<int>(hardware_threads)))
             : 1;
 

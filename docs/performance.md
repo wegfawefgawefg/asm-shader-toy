@@ -21,6 +21,7 @@ program.
 | O4 | Seed row registers and write through row pointer | Measured | Same as B0 | 28.61 | 34.95 | 1.07x | Rejected | Mean of 3 runs: 28.68, 28.61, 28.55 FPS. Slower than accepted O2 state; change was removed. |
 | O5 | Parallelize `render_frame` by row bands | Measured | Same as B0 | 258.65 | 3.89 | 9.67x | Accepted | Final mean of 3 runs: 252.97, 287.28, 235.70 FPS on a 32-thread machine. Large win, but noisy because workers are recreated each frame. |
 | O6 | Cap render worker count at 8 | Measured | Same as B0 | 154.48 | 6.89 | 5.78x | Rejected | Mean of 3 runs: 212.79, 125.82, 124.84 FPS. Slower than O5, so the cap was removed. |
+| O7 | Lower parallel threshold for retro resolutions | Measured | `./build-release/asm-shader-toy examples/raymarch/pixelated_planet.asm --size gba --measure-fps 60` | 1028.48 | 0.97 | 8.61x vs GBA baseline | Accepted | Mean of 3 runs: 976.89, 1060.12, 1048.43 FPS. Fixes the GBA-vs-PSP anomaly by letting 38,400-pixel GBA frames use parallel rendering. Follow-up threshold sweep set the final cutoff to 4,096 pixels. |
 
 Additional final check at the requested upper test bound:
 
@@ -29,3 +30,69 @@ Additional final check at the requested upper test bound:
 average_fps: 119.219
 ms_per_frame: 8.38792
 ```
+
+## Next Optimization Candidates
+
+These are not accepted until measured against the benchmark matrix above.
+
+- Persistent render worker pool: current parallel rendering creates and joins
+  worker threads every frame. A pool should reduce scheduling noise and improve
+  windowed rendering stability.
+- Predecoded fast instruction format: lower each instruction into fixed source
+  register/immediate fields so the VM does less `OperandKind` branching in the
+  inner loop.
+- Specialized hot op execution: flatten common operations like `mov`, `add`,
+  `mul`, `gt`, `jnz`, and `out` to avoid generic operand lambdas on the hottest
+  paths.
+- SIMD pixel batches: run multiple pixels together for branch-coherent shaders.
+  This is harder because VM branches can diverge.
+- More representative benchmark mode: once worker pools exist, benchmark
+  startup/warmup should separate steady-state frame cost from setup cost.
+- Optimized IR pass: constant folding, dead path cleanup, and tighter bytecode
+  packing before interpretation.
+- GPU backend later: compile the asm IR to WGSL/GLSL after the CPU VM/debugger
+  model is solid.
+
+## Open Investigation
+
+- `pixelated_planet.asm` appears to run worse at `--size gba` than at
+  `--size psp`. Hypothesis: `gba` is `240x160` (38,400 pixels), below the
+  current 65,536-pixel parallel-render threshold, while `psp` is `480x272`
+  (130,560 pixels) and renders across all workers.
+
+Baseline measurements before O7:
+
+| Shader | Size | Pixels | Avg FPS | ms/frame | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| `pixelated_planet.asm` | `gba` (`240x160`) | 38,400 | 119.41 | 8.38 | Single-threaded due to threshold. Mean of 119.80, 118.19, 120.23 FPS. |
+| `pixelated_planet.asm` | `psp` (`480x272`) | 130,560 | 387.50 | 2.59 | Parallel path. Mean of 378.54, 416.04, 367.92 FPS. |
+
+O7 lowered the parallel-render threshold from 65,536 pixels. A follow-up sweep
+showed that very tiny frames should stay single-threaded, while `64x64` and
+larger should use workers. The final cutoff is 4,096 pixels.
+After O7:
+
+| Shader | Size | Pixels | Avg FPS | ms/frame | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| `pixelated_planet.asm` | `gba` (`240x160`) | 38,400 | 1028.48 | 0.97 | Parallel path. Mean of 976.89, 1060.12, 1048.43 FPS. |
+| `pixelated_planet.asm` | `psp` (`480x272`) | 130,560 | 392.35 | 2.55 | Still parallel, roughly unchanged. Mean of 389.88, 391.17, 396.02 FPS. |
+| `pixelated_planet.asm` | `64x64` | 4,096 | 2301.76 | 0.43 | Parallel path is faster than single-threaded 1104.43 FPS at this size. |
+
+Threshold sweep:
+
+| Shader | Size | Pixels | Single FPS | Parallel FPS | Winner |
+| --- | --- | ---: | ---: | ---: | --- |
+| `pixelated_planet.asm` | `32x32` | 1,024 | 4391.06 | 2472.86 | Single |
+| `pixelated_planet.asm` | `40x40` | 1,600 | 2787.75 | 2195.00 | Single |
+| `pixelated_planet.asm` | `48x48` | 2,304 | 1942.58 | 2055.02 | Parallel, small margin |
+| `pixelated_planet.asm` | `56x56` | 3,136 | 1430.66 | 2018.89 | Parallel |
+| `pixelated_planet.asm` | `64x64` | 4,096 | 1104.43 | 2301.76 | Parallel |
+| `heavy.asm` | `32x32` | 1,024 | 6498.29 | 2478.90 | Single |
+| `heavy.asm` | `40x40` | 1,600 | 4234.20 | 2133.99 | Single |
+| `heavy.asm` | `48x48` | 2,304 | 2854.42 | 1980.43 | Single |
+| `heavy.asm` | `56x56` | 3,136 | 2183.97 | 2082.68 | Single, small margin |
+| `heavy.asm` | `64x64` | 4,096 | 1655.02 | 2261.36 | Parallel |
+
+Decision: keep frames below `64x64` single-threaded. Use the parallel path at
+`64x64` and above, which includes all retro presets currently supported by
+`--size`.
