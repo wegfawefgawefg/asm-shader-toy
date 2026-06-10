@@ -109,8 +109,9 @@ tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
 chdim dw, dh, channel
 chtime dt, channel
+chsrate sr, channel
 ```
 
 `texel` samples pixel coordinates directly. `chdim` exposes channel dimensions
 without spending fixed input registers. `chtime` exposes channel-local time in
-seconds.
+seconds. `chsrate` exposes audio and microphone sample rate.

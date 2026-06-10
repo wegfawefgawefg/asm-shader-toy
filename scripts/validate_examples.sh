@@ -11,6 +11,9 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/subroutines.asm --dry-run
 ./build/asm-shader-toy examples/basics/time_pulse.asm --dry-run
+./build/asm-shader-toy examples/audio/audio_scope.asm \
+    --audio0 examples/assets/audio/two_tone.wav \
+    --dry-run
 ./build/asm-shader-toy examples/input/live_controls.asm --dry-run
 ./build/asm-shader-toy examples/input/mouse_rings.asm --dry-run
 ./build/asm-shader-toy examples/buffers/life_display.asm \
@@ -25,6 +28,7 @@ cd "${repo_root}"
     --channel0 examples/assets/checker.png \
     --channel1 examples/assets/bars.png \
     --dry-run
+./build/asm-shader-toy examples/textures/noise_field.asm --noise0 42 --dry-run
 ./build/asm-shader-toy examples/video/video_channel.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --dry-run
@@ -39,6 +43,10 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/subroutines.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/time_pulse.asm --no-graphics --frames 2
+./build/asm-shader-toy examples/audio/audio_scope.asm \
+    --audio0 examples/assets/audio/two_tone.wav \
+    --no-graphics \
+    --frames 4
 ./build/asm-shader-toy examples/input/live_controls.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/input/mouse_rings.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/buffers/life_display.asm \
@@ -60,6 +68,10 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/textures/multi_image_mix.asm \
     --channel0 examples/assets/checker.png \
     --channel1 examples/assets/bars.png \
+    --no-graphics \
+    --frames 2
+./build/asm-shader-toy examples/textures/noise_field.asm \
+    --noise0 42 \
     --no-graphics \
     --frames 2
 ./build/asm-shader-toy examples/video/video_channel.asm \

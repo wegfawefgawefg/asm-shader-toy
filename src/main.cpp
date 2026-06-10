@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <fcntl.h>
 #include <filesystem>
@@ -44,7 +45,59 @@ struct Args {
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> video_paths;
     std::array<std::string, 4> webcam_paths;
+    std::array<std::string, 4> audio_paths;
+    std::array<std::string, 4> mic_paths;
+    std::array<std::string, 4> noise_specs;
     std::array<std::string, 4> buffer_paths;
+};
+
+constexpr int audio_texture_width = 512;
+constexpr int audio_texture_height = 2;
+constexpr int audio_sample_rate = 44100;
+
+struct AudioChannel {
+    int sample_rate = audio_sample_rate;
+    std::vector<float> samples;
+    std::vector<std::uint32_t> pixels;
+
+    [[nodiscard]] bool loaded() const {
+        return sample_rate > 0 && !samples.empty() && !pixels.empty();
+    }
+};
+
+struct MicrophoneChannel {
+    int sample_rate = audio_sample_rate;
+    FILE* pipe = nullptr;
+    std::vector<float> samples;
+    std::vector<std::uint8_t> read_buffer;
+    std::vector<std::uint32_t> pixels;
+    std::mutex mutex;
+    std::thread worker;
+    std::atomic_bool running{false};
+    std::atomic_bool failed{false};
+
+    MicrophoneChannel() = default;
+    MicrophoneChannel(const MicrophoneChannel&) = delete;
+    MicrophoneChannel& operator=(const MicrophoneChannel&) = delete;
+
+    ~MicrophoneChannel() {
+        close();
+    }
+
+    [[nodiscard]] bool loaded() const {
+        return pipe != nullptr && sample_rate > 0 && !pixels.empty();
+    }
+
+    void close() {
+        running = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (pipe != nullptr) {
+            pclose(pipe);
+            pipe = nullptr;
+        }
+    }
 };
 
 struct VideoChannel {
@@ -356,6 +409,41 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.webcam_paths[static_cast<std::size_t>(channel)] = std::move(device);
             continue;
         }
+        if (arg == "--audio0" || arg == "--audio1" || arg == "--audio2" || arg == "--audio3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.audio_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
+        if (arg == "--mic0" || arg == "--mic1" || arg == "--mic2" || arg == "--mic3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string device = "default";
+            if (i + 1 < argc) {
+                const std::string_view possible_device{argv[i + 1]};
+                if (possible_device.empty() || possible_device.front() != '-') {
+                    ++i;
+                    device = std::string{possible_device};
+                }
+            }
+            args.mic_paths[static_cast<std::size_t>(channel)] = std::move(device);
+            continue;
+        }
+        if (arg == "--noise0" || arg == "--noise1" || arg == "--noise2" || arg == "--noise3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string seed = std::to_string(channel + 1);
+            if (i + 1 < argc) {
+                const std::string_view possible_seed{argv[i + 1]};
+                if (possible_seed.empty() || possible_seed.front() != '-') {
+                    ++i;
+                    seed = std::string{possible_seed};
+                }
+            }
+            args.noise_specs[static_cast<std::size_t>(channel)] = std::move(seed);
+            continue;
+        }
         if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
             const auto value = next();
             if (!value.has_value()) {
@@ -383,6 +471,10 @@ void print_usage() {
         << "       --video0 path through --video3 path load video inputs with ffmpeg\n"
         << "       --webcam0 [device] through --webcam3 [device] load webcam inputs with "
            "ffmpeg/v4l2\n"
+        << "       --audio0 path through --audio3 path load audio textures with ffmpeg\n"
+        << "       --mic0 [device] through --mic3 [device] load live microphone textures with "
+           "ffmpeg/pulse\n"
+        << "       --noise0 [seed] through --noise3 [seed] load generated noise textures\n"
         << "       --buffer0 path through --buffer3 path run feedback buffer passes into channels\n"
         << "       --dry-run assembles and validates image inputs without rendering\n"
         << "       --no-graphics --frames N renders N CPU frames without a window\n"
@@ -428,12 +520,40 @@ bool has_webcam_paths(const Args& args) {
     return false;
 }
 
+bool has_audio_paths(const Args& args) {
+    for (const std::string& path : args.audio_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_mic_paths(const Args& args) {
+    for (const std::string& path : args.mic_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_noise_specs(const Args& args) {
+    for (const std::string& spec : args.noise_specs) {
+        if (!spec.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 ast::ImageChannel make_buffer_channel(int width, int height,
                                       const std::vector<std::uint32_t>& pixels) {
     ast::ImageChannel channel;
     channel.width = width;
     channel.height = height;
     channel.time = 0.0F;
+    channel.sample_rate = 0.0F;
     channel.external_pixels = &pixels;
     return channel;
 }
@@ -449,6 +569,229 @@ std::string shell_quote(const std::string& text) {
     }
     quoted.push_back('\'');
     return quoted;
+}
+
+bool set_pipe_nonblocking(FILE* pipe);
+std::optional<std::string> read_command_stdout(const std::string& command);
+
+std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 255) {
+    return (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+           (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+}
+
+std::uint8_t sample_to_byte(float sample) {
+    const float normalized = std::clamp(sample * 0.5F + 0.5F, 0.0F, 1.0F);
+    return static_cast<std::uint8_t>(std::lround(normalized * 255.0F));
+}
+
+std::uint32_t hash_u32(std::uint32_t value) {
+    value ^= value >> 16U;
+    value *= 0x7feb352dU;
+    value ^= value >> 15U;
+    value *= 0x846ca68bU;
+    value ^= value >> 16U;
+    return value;
+}
+
+std::uint32_t seed_from_text(const std::string& text) {
+    std::uint32_t seed = 2166136261U;
+    for (unsigned char ch : text) {
+        seed ^= static_cast<std::uint32_t>(ch);
+        seed *= 16777619U;
+    }
+    return seed;
+}
+
+void load_noise_channel(const std::string& seed_text, ast::ImageChannel& out) {
+    constexpr int noise_size = 256;
+    const std::uint32_t seed = seed_from_text(seed_text);
+    out.width = noise_size;
+    out.height = noise_size;
+    out.time = 0.0F;
+    out.sample_rate = 0.0F;
+    out.external_pixels = nullptr;
+    out.pixels.resize(static_cast<std::size_t>(noise_size * noise_size));
+    for (int y = 0; y < noise_size; ++y) {
+        for (int x = 0; x < noise_size; ++x) {
+            const std::uint32_t base = seed ^ (static_cast<std::uint32_t>(x) * 374761393U) ^
+                                       (static_cast<std::uint32_t>(y) * 668265263U);
+            const std::uint8_t r = static_cast<std::uint8_t>(hash_u32(base) & 0xFFU);
+            const std::uint8_t g = static_cast<std::uint8_t>(hash_u32(base + 1U) & 0xFFU);
+            const std::uint8_t b = static_cast<std::uint8_t>(hash_u32(base + 2U) & 0xFFU);
+            out.pixels[static_cast<std::size_t>(y * noise_size + x)] = pack_rgba8(r, g, b);
+        }
+    }
+}
+
+float audio_sample_at(const std::vector<float>& samples, std::size_t index) {
+    if (samples.empty()) {
+        return 0.0F;
+    }
+    return samples[index % samples.size()];
+}
+
+void build_audio_texture(const std::vector<float>& samples, int sample_rate, double time,
+                         std::vector<std::uint32_t>& pixels) {
+    pixels.resize(static_cast<std::size_t>(audio_texture_width * audio_texture_height));
+    const auto center =
+        static_cast<long long>(std::max(0.0, time) * static_cast<double>(sample_rate));
+    const long long half_width = audio_texture_width / 2;
+    for (int x = 0; x < audio_texture_width; ++x) {
+        const long long source = std::max(0LL, center - half_width + x);
+        const float wave = audio_sample_at(samples, static_cast<std::size_t>(source));
+        const std::uint8_t wave_byte = sample_to_byte(wave);
+        pixels[static_cast<std::size_t>(x)] = pack_rgba8(wave_byte, wave_byte, wave_byte);
+    }
+
+    constexpr int spectrum_bins = 128;
+    constexpr int window = 512;
+    constexpr float tau = 6.28318530717958647692F;
+    std::array<float, spectrum_bins> magnitudes{};
+    for (int bin = 0; bin < spectrum_bins; ++bin) {
+        float real = 0.0F;
+        float imag = 0.0F;
+        for (int n = 0; n < window; ++n) {
+            const long long source = std::max(0LL, center - window + n);
+            const float sample = audio_sample_at(samples, static_cast<std::size_t>(source));
+            const float phase = tau * static_cast<float>(bin + 1) * static_cast<float>(n) /
+                                static_cast<float>(window);
+            real += sample * std::cos(phase);
+            imag -= sample * std::sin(phase);
+        }
+        magnitudes[static_cast<std::size_t>(bin)] =
+            std::clamp(std::sqrt(real * real + imag * imag) / 32.0F, 0.0F, 1.0F);
+    }
+
+    for (int x = 0; x < audio_texture_width; ++x) {
+        const int bin = (x * spectrum_bins) / audio_texture_width;
+        const std::uint8_t magnitude = static_cast<std::uint8_t>(
+            std::lround(magnitudes[static_cast<std::size_t>(bin)] * 255.0F));
+        pixels[static_cast<std::size_t>(audio_texture_width + x)] =
+            pack_rgba8(magnitude, magnitude, magnitude);
+    }
+}
+
+bool load_audio_channel(const std::string& path, AudioChannel& out) {
+    const std::string command =
+        "ffmpeg -v error -i " + shell_quote(path) + " -ac 1 -ar 44100 -f f32le -";
+    const std::optional<std::string> raw_audio = read_command_stdout(command);
+    if (!raw_audio.has_value() || raw_audio->size() < sizeof(float)) {
+        std::cerr << "ffmpeg audio decode failed for " << path << '\n';
+        return false;
+    }
+
+    out.sample_rate = audio_sample_rate;
+    out.samples.resize(raw_audio->size() / sizeof(float));
+    std::memcpy(out.samples.data(), raw_audio->data(), out.samples.size() * sizeof(float));
+    build_audio_texture(out.samples, out.sample_rate, 0.0, out.pixels);
+    return true;
+}
+
+void update_audio_channels(ast::ChannelSet& channels, std::array<AudioChannel, 4>& audio_channels,
+                           double time) {
+    for (std::size_t i = 0; i < audio_channels.size(); ++i) {
+        AudioChannel& audio = audio_channels[i];
+        if (!audio.loaded()) {
+            continue;
+        }
+        const double duration =
+            static_cast<double>(audio.samples.size()) / static_cast<double>(audio.sample_rate);
+        const double audio_time = duration > 0.0 ? std::fmod(std::max(0.0, time), duration) : 0.0;
+        build_audio_texture(audio.samples, audio.sample_rate, audio_time, audio.pixels);
+        channels.image[i].width = audio_texture_width;
+        channels.image[i].height = audio_texture_height;
+        channels.image[i].time = static_cast<float>(audio_time);
+        channels.image[i].sample_rate = static_cast<float>(audio.sample_rate);
+        channels.image[i].pixels.clear();
+        channels.image[i].external_pixels = &audio.pixels;
+    }
+}
+
+void update_microphone_texture_locked(MicrophoneChannel& mic) {
+    build_audio_texture(mic.samples, mic.sample_rate, 0.0, mic.pixels);
+}
+
+bool open_microphone_channel(const std::string& device, MicrophoneChannel& out) {
+    out.close();
+    out.sample_rate = audio_sample_rate;
+    out.samples.assign(static_cast<std::size_t>(audio_texture_width), 0.0F);
+    update_microphone_texture_locked(out);
+
+    const std::string command = "ffmpeg -v error -f pulse -i " + shell_quote(device) +
+                                " -ac 1 -ar 44100 -f f32le - 2>/dev/null";
+    out.pipe = popen(command.c_str(), "r");
+    if (out.pipe == nullptr) {
+        std::cerr << "failed to start microphone capture for " << device << '\n';
+        return false;
+    }
+    if (!set_pipe_nonblocking(out.pipe)) {
+        std::cerr << "failed to set microphone pipe nonblocking for " << device << '\n';
+        out.close();
+        return false;
+    }
+
+    out.read_buffer.resize(4096);
+    out.failed = false;
+    out.running = true;
+    out.worker = std::thread([&out]() {
+        std::vector<float> chunk;
+        while (out.running) {
+            const ssize_t bytes_read =
+                read(fileno(out.pipe), out.read_buffer.data(), out.read_buffer.size());
+            if (bytes_read > 0) {
+                const std::size_t sample_count =
+                    static_cast<std::size_t>(bytes_read) / sizeof(float);
+                chunk.resize(sample_count);
+                std::memcpy(chunk.data(), out.read_buffer.data(), sample_count * sizeof(float));
+                {
+                    const std::lock_guard<std::mutex> lock(out.mutex);
+                    out.samples.insert(out.samples.end(), chunk.begin(), chunk.end());
+                    const std::size_t keep = static_cast<std::size_t>(audio_texture_width);
+                    if (out.samples.size() > keep) {
+                        out.samples.erase(out.samples.begin(),
+                                          out.samples.end() - static_cast<std::ptrdiff_t>(keep));
+                    }
+                    update_microphone_texture_locked(out);
+                }
+                continue;
+            }
+            if (bytes_read == 0) {
+                out.failed = true;
+                return;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+                continue;
+            }
+            out.failed = true;
+            return;
+        }
+    });
+    return true;
+}
+
+bool update_microphone_channels(ast::ChannelSet& channels,
+                                std::array<MicrophoneChannel, 4>& mic_channels, float time) {
+    for (std::size_t i = 0; i < mic_channels.size(); ++i) {
+        MicrophoneChannel& mic = mic_channels[i];
+        if (mic.pipe == nullptr) {
+            continue;
+        }
+        if (mic.failed) {
+            std::cerr << "microphone stream ended on channel " << i << '\n';
+            return false;
+        }
+        channels.image[i].width = audio_texture_width;
+        channels.image[i].height = audio_texture_height;
+        channels.image[i].time = time;
+        channels.image[i].sample_rate = static_cast<float>(mic.sample_rate);
+        channels.image[i].external_pixels = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock(mic.mutex);
+            channels.image[i].pixels = mic.pixels;
+        }
+    }
+    return true;
 }
 
 std::optional<std::string> read_command_stdout(const std::string& command) {
@@ -647,6 +990,7 @@ bool update_video_channels(ast::ChannelSet& channels, std::array<VideoChannel, 4
         channels.image[i].width = video.width;
         channels.image[i].height = video.height;
         channels.image[i].time = static_cast<float>(playback_time);
+        channels.image[i].sample_rate = 0.0F;
         channels.image[i].pixels.clear();
         channels.image[i].external_pixels = &video.pixels;
     }
@@ -808,6 +1152,7 @@ bool update_webcam_channels(ast::ChannelSet& channels,
         channels.image[i].width = webcam.width;
         channels.image[i].height = webcam.height;
         channels.image[i].time = time;
+        channels.image[i].sample_rate = 0.0F;
         channels.image[i].external_pixels = nullptr;
         {
             const std::lock_guard<std::mutex> lock(webcam.mutex);
@@ -895,6 +1240,9 @@ bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
 
     out.width = converted->w;
     out.height = converted->h;
+    out.time = 0.0F;
+    out.sample_rate = 0.0F;
+    out.external_pixels = nullptr;
     out.pixels.resize(static_cast<std::size_t>(out.width * out.height));
     const auto* bytes = static_cast<const std::uint8_t*>(converted->pixels);
     for (int y = 0; y < out.height; ++y) {
@@ -1242,7 +1590,8 @@ int main(int argc, char** argv) {
     }
 
     if (args.dry_run && !has_channel_paths(args) && !has_video_paths(args) &&
-        !has_webcam_paths(args) && !has_buffer_paths(args)) {
+        !has_webcam_paths(args) && !has_audio_paths(args) && !has_mic_paths(args) &&
+        !has_noise_specs(args) && !has_buffer_paths(args)) {
         std::cout << "ok: assembled " << args.program_path << '\n';
         return 0;
     }
@@ -1272,6 +1621,23 @@ int main(int argc, char** argv) {
         }
     }
 
+    for (std::size_t i = 0; i < args.noise_specs.size(); ++i) {
+        if (!args.noise_specs[i].empty()) {
+            load_noise_channel(args.noise_specs[i], channels.image[i]);
+        }
+    }
+
+    std::array<AudioChannel, 4> audio_channels;
+    for (std::size_t i = 0; i < args.audio_paths.size(); ++i) {
+        if (!args.audio_paths[i].empty() &&
+            !load_audio_channel(args.audio_paths[i], audio_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    update_audio_channels(channels, audio_channels, 0.0);
+
     std::array<VideoChannel, 4> video_channels;
     for (std::size_t i = 0; i < args.video_paths.size(); ++i) {
         if (!args.video_paths[i].empty() &&
@@ -1282,6 +1648,21 @@ int main(int argc, char** argv) {
         }
     }
     if (!update_video_channels(channels, video_channels, 0.0)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    std::array<MicrophoneChannel, 4> mic_channels;
+    for (std::size_t i = 0; i < args.mic_paths.size(); ++i) {
+        if (!args.mic_paths[i].empty() &&
+            !open_microphone_channel(args.mic_paths[i], mic_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    if (!update_microphone_channels(channels, mic_channels, 0.0F)) {
         IMG_Quit();
         SDL_Quit();
         return 1;
@@ -1313,6 +1694,15 @@ int main(int argc, char** argv) {
         if (has_webcam_paths(args)) {
             std::cout << " and opened webcam channels";
         }
+        if (has_audio_paths(args)) {
+            std::cout << " and loaded audio channels";
+        }
+        if (has_mic_paths(args)) {
+            std::cout << " and opened microphone channels";
+        }
+        if (has_noise_specs(args)) {
+            std::cout << " and generated noise channels";
+        }
         if (has_buffer_paths(args)) {
             std::cout << " and assembled buffer passes";
         }
@@ -1332,7 +1722,13 @@ int main(int argc, char** argv) {
         const auto measure_start = std::chrono::steady_clock::now();
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
+            update_audio_channels(channels, audio_channels, static_cast<double>(time));
             if (!update_video_channels(channels, video_channels, static_cast<double>(time))) {
+                IMG_Quit();
+                SDL_Quit();
+                return 1;
+            }
+            if (!update_microphone_channels(channels, mic_channels, time)) {
                 IMG_Quit();
                 SDL_Quit();
                 return 1;
@@ -1435,6 +1831,8 @@ int main(int argc, char** argv) {
     FileWriteTimes dependency_snapshot =
         snapshot_dependencies(collect_dependencies(assembled, buffer_programs));
     int frame = 0;
+    float shader_time = 0.0F;
+    bool paused = false;
     float fps_accumulator = 0.0F;
     int fps_frame_count = 0;
     float displayed_fps = 0.0F;
@@ -1447,6 +1845,7 @@ int main(int argc, char** argv) {
     GameControllerHandle controller_handle;
 
     while (running) {
+        bool reset_requested = false;
         input_state.mouse_wheel_x = 0.0F;
         input_state.mouse_wheel_y = 0.0F;
         SDL_Event event{};
@@ -1456,6 +1855,15 @@ int main(int argc, char** argv) {
             }
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
                 running = false;
+            }
+            if (event.type == SDL_KEYDOWN && event.key.repeat == 0 &&
+                (event.key.keysym.mod & KMOD_CTRL) != 0) {
+                if (event.key.keysym.sym == SDLK_p) {
+                    paused = !paused;
+                }
+                if (event.key.keysym.sym == SDLK_r) {
+                    reset_requested = true;
+                }
             }
             if (event.type == SDL_MOUSEMOTION) {
                 mouse_x = static_cast<float>(event.motion.x) / static_cast<float>(args.scale);
@@ -1494,19 +1902,37 @@ int main(int argc, char** argv) {
         update_gamepad_input(controller_handle, input_state);
 
         const auto now = std::chrono::steady_clock::now();
-        const std::chrono::duration<float> elapsed = now - start;
-        const std::chrono::duration<float> delta = now - previous_frame_time;
-        if (!update_video_channels(channels, video_channels,
-                                   static_cast<double>(elapsed.count()))) {
-            running = false;
-            break;
-        }
-        if (!update_webcam_channels(channels, webcam_channels, elapsed.count())) {
-            running = false;
-            break;
-        }
+        const std::chrono::duration<float> real_delta = now - previous_frame_time;
         previous_frame_time = now;
-        fps_accumulator += std::max(delta.count(), 0.0F);
+        if (reset_requested) {
+            frame = 0;
+            shader_time = 0.0F;
+            for (std::vector<std::uint32_t>& buffer : previous_buffers) {
+                std::fill(buffer.begin(), buffer.end(), 0U);
+            }
+            for (std::vector<std::uint32_t>& buffer : current_buffers) {
+                std::fill(buffer.begin(), buffer.end(), 0U);
+            }
+        }
+        const float shader_delta = paused ? 0.0F : std::max(real_delta.count(), 0.0F);
+        if (!paused) {
+            shader_time += shader_delta;
+        }
+
+        update_audio_channels(channels, audio_channels, static_cast<double>(shader_time));
+        if (!update_video_channels(channels, video_channels, static_cast<double>(shader_time))) {
+            running = false;
+            break;
+        }
+        if (!update_microphone_channels(channels, mic_channels, shader_time)) {
+            running = false;
+            break;
+        }
+        if (!update_webcam_channels(channels, webcam_channels, shader_time)) {
+            running = false;
+            break;
+        }
+        fps_accumulator += std::max(real_delta.count(), 0.0F);
         ++fps_frame_count;
         if (fps_accumulator >= 0.5F) {
             displayed_fps = static_cast<float>(fps_frame_count) / fps_accumulator;
@@ -1536,16 +1962,18 @@ int main(int argc, char** argv) {
 
         if (use_buffers) {
             render_pipeline(args, assembled.program, buffer_programs, channels, previous_buffers,
-                            current_buffers, frame, elapsed.count(), delta.count(), pixels, mouse_x,
+                            current_buffers, frame, shader_time, shader_delta, pixels, mouse_x,
                             mouse_y, mouse_down, mouse_click_x, mouse_click_y, &input_state);
         } else {
             const ast::FrameInputs frame_inputs =
-                make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,
+                make_frame_inputs(args, channels, frame, shader_time, shader_delta, mouse_x,
                                   mouse_y, mouse_down, mouse_click_x, mouse_click_y, &input_state);
             ast::render_frame(assembled.program, frame_inputs, pixels,
                               ast::RunLimits{args.max_steps});
         }
-        ++frame;
+        if (!paused) {
+            ++frame;
+        }
         if (args.frames >= 0 && frame >= args.frames) {
             running = false;
         }

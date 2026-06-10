@@ -229,6 +229,7 @@ tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
 chdim dw, dh, channel
 chtime dst, channel
+chsrate dst, channel
 key dst, scancode
 mbtn dst, button
 mwheel dx, dy
@@ -251,9 +252,11 @@ channels in the four destination registers.
 coordinates return transparent black instead of clamping.
 
 `chdim` reads channel dimensions into two destination registers. `chtime` reads
-the channel-local time in seconds. Static images and feedback buffers currently
-report `0` time; videos report loop-local playback time, and webcams report
-seconds since the stream was opened.
+the channel-local time in seconds. `chsrate` reads channel sample rate, which is
+currently nonzero for audio and microphone channels. Static images, generated
+noise, and feedback buffers report `0` time and sample rate; videos report
+loop-local playback time, and webcams report seconds since the stream was
+opened.
 
 `key` reads SDL scancode state into a register. `mbtn` reads mouse buttons
 (`0` left, `1` right, `2` middle, `3` X1, `4` X2). `mwheel` writes the

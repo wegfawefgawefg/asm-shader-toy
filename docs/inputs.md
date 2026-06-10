@@ -74,6 +74,7 @@ Sampling is explicit:
 tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
 chdim tmp0, tmp1, 0
 chtime tmp2, 0
+chsrate tmp3, 0
 out tex0_r, tex0_g, tex0_b, tex0_a
 ```
 
@@ -85,6 +86,11 @@ Current behavior:
   local `ffmpeg` and `ffprobe`
 - webcam channels through `--webcam0` through `--webcam3`, streamed with local
   `ffmpeg` and Linux V4L2
+- audio channels through `--audio0` through `--audio3`, decoded with local
+  `ffmpeg`
+- microphone channels through `--mic0` through `--mic3`, captured with local
+  `ffmpeg` and PulseAudio
+- generated noise channels through `--noise0` through `--noise3`
 - feedback buffers through `--buffer0` through `--buffer3`
 - normalized `u/v`
 - clamped edges
@@ -94,6 +100,7 @@ Current behavior:
   the channel bounds
 - `chdim` reads channel width and height
 - `chtime` reads channel-local time in seconds
+- `chsrate` reads channel sample rate
 - `key` reads SDL scancode state
 - `mbtn` reads mouse button state
 - `mwheel` reads current-frame mouse wheel delta
@@ -121,6 +128,26 @@ override it. Webcam channels are mirrored horizontally by default so shaders can
 sample them like normal preview images. Webcam `chtime` reports seconds since
 the stream was opened. Video `chtime` reports loop-local playback time.
 
+Audio and microphone channels are `512x2` textures. Row `0` is the waveform,
+with samples encoded as unsigned grayscale where `0.5` is silence. Row `1` is a
+small spectrum visualization. `chsrate` returns `44100` for these channels.
+File audio loops with shader time. Microphone capture updates from a background
+pipe and keeps the latest short sample window.
+
+Generated noise channels are static `256x256` RGBA hash-noise textures. Pass an
+optional seed after `--noiseN` to get a repeatable variant.
+
+## Runner Controls
+
+Graphical runs reserve only modified app controls:
+
+- `Ctrl+P` toggles pause.
+- `Ctrl+R` resets shader time, frame count, and feedback buffers.
+- `Escape` exits.
+
+Plain `P`, `R`, space, arrows, mouse buttons, and gamepad buttons remain visible
+to shaders through the live input query instructions.
+
 ## Live Input Queries
 
 Keyboard, mouse, and gamepad state are queried with instructions instead of
@@ -146,20 +173,11 @@ the first attached controller. Common buttons are `0` A, `1` B, `2` X, `3` Y,
 D-pad up/down/left/right. Common axes are `0` left X, `1` left Y, `2` right X,
 `3` right Y, `4` left trigger, and `5` right trigger.
 
-## Expansion Plan
+## Expansion Notes
 
-Near-term scalar inputs:
-
-- aspect ratio helper, probably `r16` only if we add named aliases or more
-  registers
-- pause/reset controls for stable experiments
-
-Later channel support:
-
-- generated noise texture channel
-- keyboard texture channel compatible with common Shadertoy keyboard examples
-- audio FFT/waveform channel
-- microphone only if the platform path stays boring
+A Shadertoy-compatible keyboard texture is still a possible follow-up for
+porting existing shaders, but direct input query instructions are the preferred
+assembly-facing path for now.
 
 There is a tiny generated video fixture:
 

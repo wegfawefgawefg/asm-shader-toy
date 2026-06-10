@@ -424,7 +424,9 @@ void test_channel_dimensions_and_time() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         chdim r16, r17, 0
         chtime r18, 0
-        out8 r16, r17, r18, 255
+        chsrate r19, 0
+        div r19, r19, 1000
+        out8 r16, r17, r18, r19
     )");
 
     require(result.ok(), "channel metadata program assembles");
@@ -433,25 +435,28 @@ void test_channel_dimensions_and_time() {
     channels.image[0].width = 12;
     channels.image[0].height = 34;
     channels.image[0].time = 56.0F;
+    channels.image[0].sample_rate = 44100.0F;
     channels.image[0].pixels = {0xFFFFFFFFU};
 
     ast::PixelInputs inputs;
     inputs.channels = &channels;
     const ast::Rgba color = ast::run_pixel(result.program, inputs);
-    require(color.r == 12 && color.g == 34 && color.b == 56,
-            "channel metadata instructions read dimensions and time");
+    require(color.r == 12 && color.g == 34 && color.b == 56 && color.a == 44,
+            "channel metadata instructions read dimensions, time, and sample rate");
 }
 
 void test_missing_channel_metadata_is_zero() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         chdim r16, r17, 3
         chtime r18, 3
-        out8 r16, r17, r18, 255
+        chsrate r19, 3
+        out8 r16, r17, r18, r19
     )");
 
     require(result.ok(), "missing channel metadata program assembles");
     const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
-    require(color.r == 0 && color.g == 0 && color.b == 0, "missing channel metadata reads as zero");
+    require(color.r == 0 && color.g == 0 && color.b == 0 && color.a == 0,
+            "missing channel metadata reads as zero");
 }
 
 void test_live_input_queries() {
@@ -586,6 +591,7 @@ void test_example_assembles() {
         "examples/basics/plasma.asm",
         "examples/basics/subroutines.asm",
         "examples/basics/time_pulse.asm",
+        "examples/audio/audio_scope.asm",
         "examples/buffers/life_buffer.asm",
         "examples/buffers/life_display.asm",
         "examples/input/live_controls.asm",
@@ -593,6 +599,7 @@ void test_example_assembles() {
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
         "examples/textures/multi_image_mix.asm",
+        "examples/textures/noise_field.asm",
         "examples/video/channel_metadata.asm",
         "examples/video/poster_edges.asm",
         "examples/video/video_channel.asm",

@@ -44,6 +44,7 @@ enum class Op {
     Texel,
     Chdim,
     Chtime,
+    Chsrate,
     Key,
     Mbtn,
     Mwheel,

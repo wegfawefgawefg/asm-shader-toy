@@ -151,6 +151,14 @@ struct RuntimeEnv {
         return channels->image[static_cast<std::size_t>(channel_index)].time;
     }
 
+    [[nodiscard]] float channel_sample_rate(int channel_index) const {
+        if (channels == nullptr || channel_index < 0 ||
+            channel_index >= static_cast<int>(channels->image.size())) {
+            return 0.0F;
+        }
+        return channels->image[static_cast<std::size_t>(channel_index)].sample_rate;
+    }
+
     [[nodiscard]] float key_state(int scancode) const {
         if (input_state == nullptr || scancode < 0 || scancode >= key_input_count) {
             return 0.0F;

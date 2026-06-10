@@ -204,6 +204,9 @@ StopReason execute_program(const Program& program, Env& env, const RunLimits& li
         case Op::Chtime:
             write(0, env.channel_time(static_cast<int>(value(1))));
             break;
+        case Op::Chsrate:
+            write(0, env.channel_sample_rate(static_cast<int>(value(1))));
+            break;
         case Op::Key:
             write(0, env.key_state(static_cast<int>(value(1))));
             break;

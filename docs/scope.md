@@ -13,8 +13,8 @@ This project starts as a CPU-rendered toy, not a fast shader compiler.
 - No interpreter work during texture-to-window scaling.
 - Simple assembler with labels, constants, comments, and includes.
 - Shadertoy-like scalar inputs for resolution, time, frame, mouse, and date.
-- Image, video, webcam, feedback buffer, keyboard, mouse button/wheel, and
-  gamepad input surfaces.
+- Image, video, webcam, audio, microphone, generated noise, feedback buffer,
+  keyboard, mouse button/wheel, and gamepad input surfaces.
 
 ## Performance Stance
 
@@ -40,7 +40,7 @@ The first optimization targets should be:
 - Dynamic indirect jumps.
 - Unbounded programs.
 - GPU shader generation.
-- Cubemap, microphone, or audio channel input.
+- Cubemap channel input.
 - A polished editor UI.
 
 ## Open Design Questions

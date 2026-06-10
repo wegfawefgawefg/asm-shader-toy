@@ -76,25 +76,24 @@ worth serious consideration. The intent is to pick through these one by one.
     Added `mbtn dst, button` for left/right/middle/X buttons and `mwheel dx,
     dy` for current-frame wheel delta.
 
-13. Pause and reset controls.
+13. Pause and reset controls. Done.
 
-    Useful for stable experiments, feedback buffers, cellular automata, and
-    debugging time-dependent shaders.
+    Added `Ctrl+P` pause/resume and `Ctrl+R` reset in graphical runs. Plain
+    keys remain available to shaders through `key`.
 
-14. Audio channel input.
+14. Audio channel input. Done.
 
-    Add waveform and FFT channel support if the platform path stays simple
-    enough. `iSampleRate` should arrive with this.
+    Added `--audioN path`, decoded through ffmpeg into a `512x2` waveform and
+    spectrum texture. Added `chsrate dst, channel` for sample-rate metadata.
 
-15. Microphone input.
+15. Microphone input. Done.
 
-    Treat microphone as optional follow-up to audio channel support. It is only
-    worth doing if capture can stay boring across supported platforms.
+    Added `--micN [device]`, captured through ffmpeg/PulseAudio into the same
+    `512x2` live audio texture shape.
 
-16. Generated noise channel.
+16. Generated noise channel. Done.
 
-    A built-in noise texture channel could make examples cheaper and easier,
-    but it should not hide ordinary arithmetic or texture access from learners.
+    Added `--noiseN [seed]`, a static `256x256` RGBA hash-noise texture channel.
 
 17. Macro-like conveniences.
 
