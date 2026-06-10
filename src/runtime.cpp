@@ -99,6 +99,7 @@ std::uint32_t pack_rgba(Rgba rgba) {
 struct RuntimeEnv {
     Registers& registers;
     const ChannelSet* channels = nullptr;
+    const InputState* input_state = nullptr;
     Rgba color{0, 0, 0, 255};
 
     [[nodiscard]] float read(const Operand& operand) const {
@@ -149,11 +150,47 @@ struct RuntimeEnv {
         }
         return channels->image[static_cast<std::size_t>(channel_index)].time;
     }
+
+    [[nodiscard]] float key_state(int scancode) const {
+        if (input_state == nullptr || scancode < 0 || scancode >= key_input_count) {
+            return 0.0F;
+        }
+        return input_state->keys[static_cast<std::size_t>(scancode)];
+    }
+
+    [[nodiscard]] float mouse_button_state(int button) const {
+        if (input_state == nullptr || button < 0 || button >= mouse_button_input_count) {
+            return 0.0F;
+        }
+        return input_state->mouse_buttons[static_cast<std::size_t>(button)];
+    }
+
+    [[nodiscard]] float mouse_wheel_x() const {
+        return input_state != nullptr ? input_state->mouse_wheel_x : 0.0F;
+    }
+
+    [[nodiscard]] float mouse_wheel_y() const {
+        return input_state != nullptr ? input_state->mouse_wheel_y : 0.0F;
+    }
+
+    [[nodiscard]] float gamepad_button_state(int button) const {
+        if (input_state == nullptr || button < 0 || button >= gamepad_button_input_count) {
+            return 0.0F;
+        }
+        return input_state->gamepad_buttons[static_cast<std::size_t>(button)];
+    }
+
+    [[nodiscard]] float gamepad_axis_state(int axis) const {
+        if (input_state == nullptr || axis < 0 || axis >= gamepad_axis_input_count) {
+            return 0.0F;
+        }
+        return input_state->gamepad_axes[static_cast<std::size_t>(axis)];
+    }
 };
 
 Rgba run_pixel_registers(const Program& program, Registers registers, const ChannelSet* channels,
-                         const RunLimits& limits) {
-    RuntimeEnv env{registers, channels};
+                         const InputState* input_state, const RunLimits& limits) {
+    RuntimeEnv env{registers, channels, input_state};
     detail::execute_program(program, env, limits);
     return env.color;
 }
@@ -163,7 +200,7 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
 Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits) {
     Registers registers{};
     seed_inputs(registers, inputs);
-    return run_pixel_registers(program, registers, inputs.channels, limits);
+    return run_pixel_registers(program, registers, inputs.channels, inputs.input_state, limits);
 }
 
 void render_frame(const Program& program, const FrameInputs& inputs,
@@ -186,7 +223,8 @@ void render_frame(const Program& program, const FrameInputs& inputs,
                 registers[0] = static_cast<float>(x);
                 registers[1] = static_cast<float>(y);
                 pixels[static_cast<std::size_t>(y * inputs.width + x)] =
-                    pack_rgba(run_pixel_registers(program, registers, inputs.channels, limits));
+                    pack_rgba(run_pixel_registers(program, registers, inputs.channels,
+                                                  inputs.input_state, limits));
             }
         }
     };

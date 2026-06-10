@@ -77,6 +77,48 @@ struct WebcamChannel {
     }
 };
 
+struct GameControllerHandle {
+    SDL_GameController* controller = nullptr;
+
+    GameControllerHandle() = default;
+    GameControllerHandle(const GameControllerHandle&) = delete;
+    GameControllerHandle& operator=(const GameControllerHandle&) = delete;
+
+    ~GameControllerHandle() {
+        close();
+    }
+
+    [[nodiscard]] SDL_GameController* get() const {
+        return controller;
+    }
+
+    void close() {
+        if (controller != nullptr) {
+            SDL_GameControllerClose(controller);
+            controller = nullptr;
+        }
+    }
+
+    void refresh() {
+        if (controller != nullptr) {
+            if (SDL_GameControllerGetAttached(controller) == SDL_TRUE) {
+                return;
+            }
+            close();
+        }
+
+        const int joystick_count = SDL_NumJoysticks();
+        for (int i = 0; i < joystick_count; ++i) {
+            if (SDL_IsGameController(i) == SDL_TRUE) {
+                controller = SDL_GameControllerOpen(i);
+                if (controller != nullptr) {
+                    return;
+                }
+            }
+        }
+    }
+};
+
 std::string lower_ascii(std::string_view text) {
     std::string lowered;
     lowered.reserve(text.size());
@@ -655,6 +697,67 @@ bool update_webcam_channels(ast::ChannelSet& channels,
     return true;
 }
 
+int mouse_button_index(std::uint8_t sdl_button) {
+    switch (sdl_button) {
+    case SDL_BUTTON_LEFT:
+        return 0;
+    case SDL_BUTTON_RIGHT:
+        return 1;
+    case SDL_BUTTON_MIDDLE:
+        return 2;
+    case SDL_BUTTON_X1:
+        return 3;
+    case SDL_BUTTON_X2:
+        return 4;
+    default:
+        return -1;
+    }
+}
+
+void update_keyboard_input(ast::InputState& input_state) {
+    int count = 0;
+    const Uint8* keys = SDL_GetKeyboardState(&count);
+    input_state.keys.fill(0.0F);
+    const int key_count = std::min(count, ast::key_input_count);
+    for (int i = 0; i < key_count; ++i) {
+        input_state.keys[static_cast<std::size_t>(i)] = keys[i] != 0 ? 1.0F : 0.0F;
+    }
+}
+
+float normalize_controller_axis(Sint16 value) {
+    if (value < 0) {
+        return static_cast<float>(value) / 32768.0F;
+    }
+    return static_cast<float>(value) / 32767.0F;
+}
+
+void update_gamepad_input(GameControllerHandle& controller_handle, ast::InputState& input_state) {
+    input_state.gamepad_buttons.fill(0.0F);
+    input_state.gamepad_axes.fill(0.0F);
+
+    controller_handle.refresh();
+    SDL_GameController* controller = controller_handle.get();
+    if (controller == nullptr) {
+        return;
+    }
+
+    const int button_count =
+        std::min(static_cast<int>(SDL_CONTROLLER_BUTTON_MAX), ast::gamepad_button_input_count);
+    for (int i = 0; i < button_count; ++i) {
+        input_state.gamepad_buttons[static_cast<std::size_t>(i)] =
+            SDL_GameControllerGetButton(controller, static_cast<SDL_GameControllerButton>(i)) != 0
+                ? 1.0F
+                : 0.0F;
+    }
+
+    const int axis_count =
+        std::min(static_cast<int>(SDL_CONTROLLER_AXIS_MAX), ast::gamepad_axis_input_count);
+    for (int i = 0; i < axis_count; ++i) {
+        input_state.gamepad_axes[static_cast<std::size_t>(i)] = normalize_controller_axis(
+            SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(i)));
+    }
+}
+
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
     SDL_Surface* loaded = IMG_Load(path.c_str());
     if (loaded == nullptr) {
@@ -709,7 +812,8 @@ bool save_frame_png(const std::string& path, int width, int height,
 ast::FrameInputs make_frame_inputs(const Args& args, const ast::ChannelSet& channels, int frame,
                                    float time, float time_delta, float mouse_x = 0.0F,
                                    float mouse_y = 0.0F, float mouse_down = 0.0F,
-                                   float mouse_click_x = 0.0F, float mouse_click_y = 0.0F) {
+                                   float mouse_click_x = 0.0F, float mouse_click_y = 0.0F,
+                                   const ast::InputState* input_state = nullptr) {
     const std::time_t wall_time = std::time(nullptr);
     const std::tm* local_time = std::localtime(&wall_time);
 
@@ -733,6 +837,7 @@ ast::FrameInputs make_frame_inputs(const Args& args, const ast::ChannelSet& chan
     frame_inputs.month = local_time != nullptr ? local_time->tm_mon + 1 : 1;
     frame_inputs.day = local_time != nullptr ? local_time->tm_mday : 1;
     frame_inputs.channels = &channels;
+    frame_inputs.input_state = input_state;
     return frame_inputs;
 }
 
@@ -824,7 +929,8 @@ void render_pipeline(const Args& args, const ast::Program& image_program,
                      std::array<std::vector<std::uint32_t>, 4>& current_buffers, int frame,
                      float time, float time_delta, std::vector<std::uint32_t>& pixels,
                      float mouse_x = 0.0F, float mouse_y = 0.0F, float mouse_down = 0.0F,
-                     float mouse_click_x = 0.0F, float mouse_click_y = 0.0F) {
+                     float mouse_click_x = 0.0F, float mouse_click_y = 0.0F,
+                     const ast::InputState* input_state = nullptr) {
     ast::ChannelSet previous_channels = base_channels;
     for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
         if (buffer_programs[i].has_value()) {
@@ -839,7 +945,7 @@ void render_pipeline(const Args& args, const ast::Program& image_program,
         }
         const ast::FrameInputs buffer_inputs =
             make_frame_inputs(args, previous_channels, frame, time, time_delta, mouse_x, mouse_y,
-                              mouse_down, mouse_click_x, mouse_click_y);
+                              mouse_down, mouse_click_x, mouse_click_y, input_state);
         ast::render_frame(buffer_programs[i]->program, buffer_inputs, current_buffers[i],
                           ast::RunLimits{args.max_steps});
     }
@@ -854,7 +960,7 @@ void render_pipeline(const Args& args, const ast::Program& image_program,
 
     const ast::FrameInputs image_inputs =
         make_frame_inputs(args, final_channels, frame, time, time_delta, mouse_x, mouse_y,
-                          mouse_down, mouse_click_x, mouse_click_y);
+                          mouse_down, mouse_click_x, mouse_click_y, input_state);
     ast::render_frame(image_program, image_inputs, pixels, ast::RunLimits{args.max_steps});
 
     for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
@@ -1022,8 +1128,9 @@ int main(int argc, char** argv) {
     }
 
     const std::uint32_t sdl_init_flags =
-        args.no_graphics ? static_cast<std::uint32_t>(SDL_INIT_TIMER)
-                         : static_cast<std::uint32_t>(SDL_INIT_VIDEO | SDL_INIT_TIMER);
+        args.no_graphics
+            ? static_cast<std::uint32_t>(SDL_INIT_TIMER)
+            : static_cast<std::uint32_t>(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER);
     if (SDL_Init(sdl_init_flags) != 0) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
         return 1;
@@ -1208,8 +1315,12 @@ int main(int argc, char** argv) {
     float mouse_down = 0.0F;
     float mouse_click_x = 0.0F;
     float mouse_click_y = 0.0F;
+    ast::InputState input_state;
+    GameControllerHandle controller_handle;
 
     while (running) {
+        input_state.mouse_wheel_x = 0.0F;
+        input_state.mouse_wheel_y = 0.0F;
         SDL_Event event{};
         while (SDL_PollEvent(&event) != 0) {
             if (event.type == SDL_QUIT) {
@@ -1222,17 +1333,37 @@ int main(int argc, char** argv) {
                 mouse_x = static_cast<float>(event.motion.x) / static_cast<float>(args.scale);
                 mouse_y = static_cast<float>(event.motion.y) / static_cast<float>(args.scale);
             }
-            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-                mouse_down = 1.0F;
-                mouse_click_x = static_cast<float>(event.button.x) / static_cast<float>(args.scale);
-                mouse_click_y = static_cast<float>(event.button.y) / static_cast<float>(args.scale);
-                mouse_x = mouse_click_x;
-                mouse_y = mouse_click_y;
+            if (event.type == SDL_MOUSEBUTTONDOWN) {
+                const int button_index = mouse_button_index(event.button.button);
+                if (button_index >= 0 && button_index < ast::mouse_button_input_count) {
+                    input_state.mouse_buttons[static_cast<std::size_t>(button_index)] = 1.0F;
+                }
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_down = 1.0F;
+                    mouse_click_x =
+                        static_cast<float>(event.button.x) / static_cast<float>(args.scale);
+                    mouse_click_y =
+                        static_cast<float>(event.button.y) / static_cast<float>(args.scale);
+                    mouse_x = mouse_click_x;
+                    mouse_y = mouse_click_y;
+                }
             }
-            if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
-                mouse_down = 0.0F;
+            if (event.type == SDL_MOUSEBUTTONUP) {
+                const int button_index = mouse_button_index(event.button.button);
+                if (button_index >= 0 && button_index < ast::mouse_button_input_count) {
+                    input_state.mouse_buttons[static_cast<std::size_t>(button_index)] = 0.0F;
+                }
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    mouse_down = 0.0F;
+                }
+            }
+            if (event.type == SDL_MOUSEWHEEL) {
+                input_state.mouse_wheel_x += static_cast<float>(event.wheel.x);
+                input_state.mouse_wheel_y += static_cast<float>(event.wheel.y);
             }
         }
+        update_keyboard_input(input_state);
+        update_gamepad_input(controller_handle, input_state);
 
         const auto now = std::chrono::steady_clock::now();
         const std::chrono::duration<float> elapsed = now - start;
@@ -1274,11 +1405,11 @@ int main(int argc, char** argv) {
         if (use_buffers) {
             render_pipeline(args, assembled.program, buffer_programs, channels, previous_buffers,
                             current_buffers, frame, elapsed.count(), delta.count(), pixels, mouse_x,
-                            mouse_y, mouse_down, mouse_click_x, mouse_click_y);
+                            mouse_y, mouse_down, mouse_click_x, mouse_click_y, &input_state);
         } else {
             const ast::FrameInputs frame_inputs =
                 make_frame_inputs(args, channels, frame, elapsed.count(), delta.count(), mouse_x,
-                                  mouse_y, mouse_down, mouse_click_x, mouse_click_y);
+                                  mouse_y, mouse_down, mouse_click_x, mouse_click_y, &input_state);
             ast::render_frame(assembled.program, frame_inputs, pixels,
                               ast::RunLimits{args.max_steps});
         }
@@ -1301,6 +1432,7 @@ int main(int argc, char** argv) {
         SDL_RenderPresent(renderer);
     }
 
+    controller_handle.close();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

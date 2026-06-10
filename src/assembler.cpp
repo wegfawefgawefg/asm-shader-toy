@@ -458,15 +458,17 @@ void parse_source(ParseState& state, const std::string& source, const std::strin
 
 std::optional<Op> parse_op(std::string_view op) {
     static const std::map<std::string_view, Op> ops{
-        {"mov", Op::Mov},     {"add", Op::Add},       {"sub", Op::Sub},     {"mul", Op::Mul},
-        {"div", Op::Div},     {"sin", Op::Sin},       {"cos", Op::Cos},     {"sqrt", Op::Sqrt},
-        {"abs", Op::Abs},     {"floor", Op::Floor},   {"fract", Op::Fract}, {"min", Op::Min},
-        {"max", Op::Max},     {"mod", Op::Mod},       {"norm", Op::Norm},   {"lt", Op::Lt},
-        {"gt", Op::Gt},       {"eq", Op::Eq},         {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
-        {"jz", Op::Jz},       {"jeq", Op::Jeq},       {"jne", Op::Jne},     {"jlt", Op::Jlt},
-        {"jle", Op::Jle},     {"jgt", Op::Jgt},       {"jge", Op::Jge},     {"call", Op::Call},
-        {"out", Op::Out},     {"out8", Op::Out8},     {"tex", Op::Tex},     {"texel", Op::Texel},
-        {"chdim", Op::Chdim}, {"chtime", Op::Chtime}, {"ret", Op::Ret},     {"halt", Op::Halt},
+        {"mov", Op::Mov},       {"add", Op::Add},       {"sub", Op::Sub},     {"mul", Op::Mul},
+        {"div", Op::Div},       {"sin", Op::Sin},       {"cos", Op::Cos},     {"sqrt", Op::Sqrt},
+        {"abs", Op::Abs},       {"floor", Op::Floor},   {"fract", Op::Fract}, {"min", Op::Min},
+        {"max", Op::Max},       {"mod", Op::Mod},       {"norm", Op::Norm},   {"lt", Op::Lt},
+        {"gt", Op::Gt},         {"eq", Op::Eq},         {"jmp", Op::Jmp},     {"jnz", Op::Jnz},
+        {"jz", Op::Jz},         {"jeq", Op::Jeq},       {"jne", Op::Jne},     {"jlt", Op::Jlt},
+        {"jle", Op::Jle},       {"jgt", Op::Jgt},       {"jge", Op::Jge},     {"call", Op::Call},
+        {"out", Op::Out},       {"out8", Op::Out8},     {"tex", Op::Tex},     {"texel", Op::Texel},
+        {"chdim", Op::Chdim},   {"chtime", Op::Chtime}, {"key", Op::Key},     {"mbtn", Op::Mbtn},
+        {"mwheel", Op::Mwheel}, {"gbtn", Op::Gbtn},     {"gaxis", Op::Gaxis}, {"ret", Op::Ret},
+        {"halt", Op::Halt},
     };
 
     const auto it = ops.find(op);
@@ -495,6 +497,11 @@ int expected_operands(Op op) {
     case Op::Jnz:
     case Op::Jz:
     case Op::Chtime:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Mwheel:
+    case Op::Gbtn:
+    case Op::Gaxis:
         return 2;
     case Op::Add:
     case Op::Sub:
@@ -546,7 +553,13 @@ bool operand_must_be_register(Op op, int index) {
     case Op::Gt:
     case Op::Eq:
     case Op::Chtime:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Gbtn:
+    case Op::Gaxis:
         return index == 0;
+    case Op::Mwheel:
+        return index == 0 || index == 1;
     case Op::Chdim:
         return index == 0 || index == 1;
     case Op::Tex:
@@ -610,6 +623,11 @@ bool operand_must_be_label(Op op, int index) {
     case Op::Texel:
     case Op::Chdim:
     case Op::Chtime:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Mwheel:
+    case Op::Gbtn:
+    case Op::Gaxis:
     case Op::Ret:
     case Op::Halt:
         return false;
@@ -672,6 +690,11 @@ bool op_allowed_in_consts(Op op) {
     case Op::Texel:
     case Op::Chdim:
     case Op::Chtime:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Mwheel:
+    case Op::Gbtn:
+    case Op::Gaxis:
     case Op::Out:
     case Op::Out8:
         return false;
@@ -895,6 +918,30 @@ struct ConstEnv {
     }
 
     [[nodiscard]] float channel_time(int) const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float key_state(int) const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float mouse_button_state(int) const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float mouse_wheel_x() const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float mouse_wheel_y() const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float gamepad_button_state(int) const {
+        return 0.0F;
+    }
+
+    [[nodiscard]] float gamepad_axis_state(int) const {
         return 0.0F;
     }
 };

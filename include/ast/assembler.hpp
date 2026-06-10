@@ -44,6 +44,11 @@ enum class Op {
     Texel,
     Chdim,
     Chtime,
+    Key,
+    Mbtn,
+    Mwheel,
+    Gbtn,
+    Gaxis,
     Ret,
     Halt,
 };

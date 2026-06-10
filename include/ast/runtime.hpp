@@ -10,6 +10,20 @@ namespace ast {
 
 struct ChannelSet;
 
+constexpr int key_input_count = 512;
+constexpr int mouse_button_input_count = 8;
+constexpr int gamepad_button_input_count = 32;
+constexpr int gamepad_axis_input_count = 16;
+
+struct InputState {
+    std::array<float, key_input_count> keys{};
+    std::array<float, mouse_button_input_count> mouse_buttons{};
+    float mouse_wheel_x = 0.0F;
+    float mouse_wheel_y = 0.0F;
+    std::array<float, gamepad_button_input_count> gamepad_buttons{};
+    std::array<float, gamepad_axis_input_count> gamepad_axes{};
+};
+
 struct PixelInputs {
     int x = 0;
     int y = 0;
@@ -28,6 +42,7 @@ struct PixelInputs {
     int month = 1;
     int day = 1;
     const ChannelSet* channels = nullptr;
+    const InputState* input_state = nullptr;
 };
 
 struct FrameInputs {
@@ -46,6 +61,7 @@ struct FrameInputs {
     int month = 1;
     int day = 1;
     const ChannelSet* channels = nullptr;
+    const InputState* input_state = nullptr;
 };
 
 struct RunLimits {

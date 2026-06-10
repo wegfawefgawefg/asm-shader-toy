@@ -229,6 +229,11 @@ tex dr, dg, db, da, channel, u, v
 texel dr, dg, db, da, channel, x, y
 chdim dw, dh, channel
 chtime dst, channel
+key dst, scancode
+mbtn dst, button
+mwheel dx, dy
+gbtn dst, button
+gaxis dst, axis
 ret
 halt
 ```
@@ -249,6 +254,11 @@ coordinates return transparent black instead of clamping.
 the channel-local time in seconds. Static images and feedback buffers currently
 report `0` time; videos report loop-local playback time, and webcams report
 seconds since the stream was opened.
+
+`key` reads SDL scancode state into a register. `mbtn` reads mouse buttons
+(`0` left, `1` right, `2` middle, `3` X1, `4` X2). `mwheel` writes the
+current-frame wheel delta into two registers. `gbtn` and `gaxis` read the first
+available SDL game controller; axes are normalized to roughly `-1..1`.
 
 ## Feedback Buffers
 

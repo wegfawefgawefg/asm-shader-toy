@@ -63,16 +63,17 @@ worth serious consideration. The intent is to pick through these one by one.
     capture into a background thread with a small ring buffer would isolate
     rendering from camera or decoder stalls.
 
-11. Keyboard input.
+11. Keyboard and gamepad input. Done.
 
-    Add either a compact keyboard channel, a key query instruction, or both.
-    A Shadertoy-compatible keyboard texture would make porting examples easier,
-    but a direct query instruction may be nicer assembly.
+    Added `key dst, scancode` for SDL scancodes plus `gbtn dst, button` and
+    `gaxis dst, axis` for the first SDL game controller. A future
+    Shadertoy-compatible keyboard texture can still be added if porting
+    examples needs it.
 
-12. More mouse inputs.
+12. More mouse inputs. Done.
 
-    Add mouse wheel and right/middle button state. Current inputs cover only
-    left-button position and click position.
+    Added `mbtn dst, button` for left/right/middle/X buttons and `mwheel dx,
+    dy` for current-frame wheel delta.
 
 13. Pause and reset controls.
 

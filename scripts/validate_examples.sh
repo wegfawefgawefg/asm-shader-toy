@@ -11,6 +11,7 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/subroutines.asm --dry-run
 ./build/asm-shader-toy examples/basics/time_pulse.asm --dry-run
+./build/asm-shader-toy examples/input/live_controls.asm --dry-run
 ./build/asm-shader-toy examples/input/mouse_rings.asm --dry-run
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
@@ -38,6 +39,7 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/subroutines.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/basics/time_pulse.asm --no-graphics --frames 2
+./build/asm-shader-toy examples/input/live_controls.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/input/mouse_rings.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \

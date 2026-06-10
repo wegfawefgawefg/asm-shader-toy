@@ -139,6 +139,16 @@ void test_const_block_rejects_channel_metadata_ops() {
     require(!result.ok(), ".consts rejects channel metadata ops");
 }
 
+void test_const_block_rejects_live_input_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        .consts
+            key pressed, 4
+        .end
+        out8 0, 0, 0, 255
+    )");
+    require(!result.ok(), ".consts rejects live input ops");
+}
+
 void test_const_block_max_steps_reports_error() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         .consts
@@ -444,6 +454,57 @@ void test_missing_channel_metadata_is_zero() {
     require(color.r == 0 && color.g == 0 && color.b == 0, "missing channel metadata reads as zero");
 }
 
+void test_live_input_queries() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        key r16, 4
+        mbtn r17, 1
+        mwheel r18, r19
+        gbtn r20, 0
+        gaxis r21, 2
+        out8 r16, r17, r18, r19
+    )");
+    const ast::AssembleResult gamepad_result = ast::assemble_source(R"(
+        gbtn r16, 0
+        gaxis r17, 2
+        out8 r16, r17, 0, 255
+    )");
+
+    require(result.ok(), "live input query program assembles");
+    require(gamepad_result.ok(), "gamepad input query program assembles");
+
+    ast::InputState input_state;
+    input_state.keys[4] = 10.0F;
+    input_state.mouse_buttons[1] = 20.0F;
+    input_state.mouse_wheel_x = 30.0F;
+    input_state.mouse_wheel_y = 40.0F;
+    input_state.gamepad_buttons[0] = 50.0F;
+    input_state.gamepad_axes[2] = 60.0F;
+
+    ast::PixelInputs inputs;
+    inputs.input_state = &input_state;
+    const ast::Rgba color = ast::run_pixel(result.program, inputs);
+    const ast::Rgba gamepad_color = ast::run_pixel(gamepad_result.program, inputs);
+    require(color.r == 10 && color.g == 20 && color.b == 30 && color.a == 40,
+            "live input queries read the input snapshot");
+    require(gamepad_color.r == 50 && gamepad_color.g == 60,
+            "gamepad input queries read the input snapshot");
+}
+
+void test_missing_live_input_queries_are_zero() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        key r16, 4
+        mbtn r17, 1
+        gbtn r18, 0
+        gaxis r19, 2
+        out8 r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "missing live input query program assembles");
+    const ast::Rgba color = ast::run_pixel(result.program, ast::PixelInputs{});
+    require(color.r == 0 && color.g == 0 && color.b == 0 && color.a == 0,
+            "missing live input snapshot reads as zero");
+}
+
 void test_file_dependencies_include_main_and_includes() {
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
@@ -527,6 +588,7 @@ void test_example_assembles() {
         "examples/basics/time_pulse.asm",
         "examples/buffers/life_buffer.asm",
         "examples/buffers/life_display.asm",
+        "examples/input/live_controls.asm",
         "examples/input/mouse_rings.asm",
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",
@@ -562,6 +624,7 @@ int main() {
     test_const_block_rejects_runtime_aliases();
     test_const_block_rejects_runtime_only_ops();
     test_const_block_rejects_channel_metadata_ops();
+    test_const_block_rejects_live_input_ops();
     test_const_block_max_steps_reports_error();
     test_subroutine_call_ret_and_halt();
     test_ret_without_call_still_halts();
@@ -582,6 +645,8 @@ int main() {
     test_texel_out_of_bounds_is_black();
     test_channel_dimensions_and_time();
     test_missing_channel_metadata_is_zero();
+    test_live_input_queries();
+    test_missing_live_input_queries_are_zero();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();
     test_recursive_include_reports_error();

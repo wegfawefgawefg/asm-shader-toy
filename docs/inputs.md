@@ -94,6 +94,11 @@ Current behavior:
   the channel bounds
 - `chdim` reads channel width and height
 - `chtime` reads channel-local time in seconds
+- `key` reads SDL scancode state
+- `mbtn` reads mouse button state
+- `mwheel` reads current-frame mouse wheel delta
+- `gbtn` reads first-gamepad button state
+- `gaxis` reads first-gamepad axis state
 
 Buffer N renders into channel N before the image pass:
 
@@ -115,15 +120,38 @@ Webcam channels are mirrored horizontally by default so shaders can sample them
 like normal preview images. Webcam `chtime` reports seconds since the stream was
 opened. Video `chtime` reports loop-local playback time.
 
+## Live Input Queries
+
+Keyboard, mouse, and gamepad state are queried with instructions instead of
+fixed registers:
+
+```asm
+key tmp0, 4          ; SDL_SCANCODE_A
+mbtn tmp1, 1         ; right mouse button
+mwheel tmp2, tmp3    ; wheel x/y delta for this frame
+gbtn tmp4, 0         ; first controller A button
+gaxis tmp5, 0        ; first controller left stick X
+```
+
+Common SDL scancodes are `4` A, `7` D, `22` S, `26` W, `40` Return, `41`
+Escape, `44` Space, `79` Right, `80` Left, `81` Down, and `82` Up.
+
+Mouse buttons are `0` left, `1` right, `2` middle, `3` X1, and `4` X2. Mouse
+wheel values are deltas for the current rendered frame.
+
+Gamepad button and axis indices follow SDL2's `SDL_GameController` enums for
+the first attached controller. Common buttons are `0` A, `1` B, `2` X, `3` Y,
+`4` Back, `6` Start, `9` left shoulder, `10` right shoulder, and `11..14`
+D-pad up/down/left/right. Common axes are `0` left X, `1` left Y, `2` right X,
+`3` right Y, `4` left trigger, and `5` right trigger.
+
 ## Expansion Plan
 
 Near-term scalar inputs:
 
 - aspect ratio helper, probably `r16` only if we add named aliases or more
   registers
-- keyboard state as a compact channel or key query instruction
 - pause/reset controls for stable experiments
-- mouse wheel and right/middle buttons
 
 Next channel support:
 

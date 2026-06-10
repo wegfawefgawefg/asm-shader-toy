@@ -204,6 +204,22 @@ StopReason execute_program(const Program& program, Env& env, const RunLimits& li
         case Op::Chtime:
             write(0, env.channel_time(static_cast<int>(value(1))));
             break;
+        case Op::Key:
+            write(0, env.key_state(static_cast<int>(value(1))));
+            break;
+        case Op::Mbtn:
+            write(0, env.mouse_button_state(static_cast<int>(value(1))));
+            break;
+        case Op::Mwheel:
+            write(0, env.mouse_wheel_x());
+            write(1, env.mouse_wheel_y());
+            break;
+        case Op::Gbtn:
+            write(0, env.gamepad_button_state(static_cast<int>(value(1))));
+            break;
+        case Op::Gaxis:
+            write(0, env.gamepad_axis_state(static_cast<int>(value(1))));
+            break;
         case Op::Ret:
             if (call_depth > 0) {
                 --call_depth;
