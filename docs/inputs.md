@@ -109,16 +109,17 @@ Buffer N renders into channel N before the image pass:
 Buffer passes sample the previous frame's buffer contents. The image pass samples
 the current frame's freshly rendered buffer contents.
 
-Video channels currently preload all decoded frames. This is simple and works
-well for short fixtures, but streaming decode is needed before using long movies
-or high-resolution clips.
+Video channels stream decoded frames from an ffmpeg pipe with looping enabled
+and keep only the current decoded frame in memory. Very large or high-resolution
+files can still be too expensive to shade on the CPU, but they no longer require
+preloading the whole decoded clip.
 
-Webcam channels stream `320x240` frames through a nonblocking pipe and reuse the
-latest complete frame when the camera has not produced a newer one. `--webcam0`
-defaults to `/dev/video0`; pass a device path after the flag to override it.
-Webcam channels are mirrored horizontally by default so shaders can sample them
-like normal preview images. Webcam `chtime` reports seconds since the stream was
-opened. Video `chtime` reports loop-local playback time.
+Webcam channels stream `320x240` frames through a background worker and reuse
+the latest complete frame when the camera has not produced a newer one.
+`--webcam0` defaults to `/dev/video0`; pass a device path after the flag to
+override it. Webcam channels are mirrored horizontally by default so shaders can
+sample them like normal preview images. Webcam `chtime` reports seconds since
+the stream was opened. Video `chtime` reports loop-local playback time.
 
 ## Live Input Queries
 
@@ -152,10 +153,6 @@ Near-term scalar inputs:
 - aspect ratio helper, probably `r16` only if we add named aliases or more
   registers
 - pause/reset controls for stable experiments
-
-Next channel support:
-
-- streaming video decode instead of preloading all frames
 
 Later channel support:
 

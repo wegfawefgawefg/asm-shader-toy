@@ -5,9 +5,11 @@
 #include <SDL_image.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -16,9 +18,11 @@
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -47,10 +51,30 @@ struct VideoChannel {
     int width = 0;
     int height = 0;
     double frames_per_second = 30.0;
-    std::vector<std::vector<std::uint32_t>> frames;
+    double duration_seconds = 0.0;
+    FILE* pipe = nullptr;
+    std::string path;
+    std::vector<std::uint8_t> pending_frame;
+    std::vector<std::uint32_t> pixels;
+    long long current_frame_index = 0;
 
     [[nodiscard]] bool loaded() const {
-        return width > 0 && height > 0 && !frames.empty();
+        return pipe != nullptr && width > 0 && height > 0 && !pixels.empty();
+    }
+
+    VideoChannel() = default;
+    VideoChannel(const VideoChannel&) = delete;
+    VideoChannel& operator=(const VideoChannel&) = delete;
+
+    ~VideoChannel() {
+        close();
+    }
+
+    void close() {
+        if (pipe != nullptr) {
+            pclose(pipe);
+            pipe = nullptr;
+        }
     }
 };
 
@@ -61,19 +85,33 @@ struct WebcamChannel {
     std::vector<std::uint8_t> pending_frame;
     std::vector<std::uint32_t> pixels;
     std::size_t pending_bytes = 0;
+    std::mutex mutex;
+    std::thread worker;
+    std::atomic_bool running{false};
+    std::atomic_bool failed{false};
+    std::atomic_bool has_frame{false};
 
     WebcamChannel() = default;
     WebcamChannel(const WebcamChannel&) = delete;
     WebcamChannel& operator=(const WebcamChannel&) = delete;
 
     ~WebcamChannel() {
-        if (pipe != nullptr) {
-            pclose(pipe);
-        }
+        close();
     }
 
     [[nodiscard]] bool loaded() const {
-        return pipe != nullptr && width > 0 && height > 0 && !pixels.empty();
+        return pipe != nullptr && width > 0 && height > 0;
+    }
+
+    void close() {
+        running = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (pipe != nullptr) {
+            pclose(pipe);
+            pipe = nullptr;
+        }
     }
 };
 
@@ -455,10 +493,11 @@ double parse_frame_rate(std::string_view text) {
 
 bool load_video_channel(const std::string& path, VideoChannel& out) {
     const std::string quoted_path = shell_quote(path);
-    const std::string probe_command = "ffprobe -v error -select_streams v:0 "
-                                      "-show_entries stream=width,height,avg_frame_rate "
-                                      "-of default=noprint_wrappers=1 " +
-                                      quoted_path;
+    const std::string probe_command =
+        "ffprobe -v error -select_streams v:0 "
+        "-show_entries stream=width,height,avg_frame_rate:format=duration "
+        "-of default=noprint_wrappers=1 " +
+        quoted_path;
     const std::optional<std::string> probe_output = read_command_stdout(probe_command);
     if (!probe_output.has_value()) {
         std::cerr << "ffprobe failed for " << path << '\n';
@@ -468,6 +507,7 @@ bool load_video_channel(const std::string& path, VideoChannel& out) {
     int width = 0;
     int height = 0;
     double frames_per_second = 30.0;
+    double duration_seconds = 0.0;
     std::size_t offset = 0;
     while (offset < probe_output->size()) {
         const std::size_t end = probe_output->find('\n', offset);
@@ -480,6 +520,8 @@ bool load_video_channel(const std::string& path, VideoChannel& out) {
             height = std::atoi(std::string{line.substr(7)}.c_str());
         } else if (line.starts_with("avg_frame_rate=")) {
             frames_per_second = parse_frame_rate(line.substr(15));
+        } else if (line.starts_with("duration=")) {
+            duration_seconds = std::atof(std::string{line.substr(9)}.c_str());
         }
         if (end == std::string::npos) {
             break;
@@ -492,71 +534,128 @@ bool load_video_channel(const std::string& path, VideoChannel& out) {
         return false;
     }
 
-    const std::string decode_command =
-        "ffmpeg -v error -i " + quoted_path + " -f rawvideo -pix_fmt rgba -";
-    const std::optional<std::string> raw_video = read_command_stdout(decode_command);
-    if (!raw_video.has_value()) {
-        std::cerr << "ffmpeg decode failed for " << path << '\n';
+    out.close();
+    out.width = width;
+    out.height = height;
+    out.frames_per_second = frames_per_second;
+    out.duration_seconds = duration_seconds > 0.0 ? duration_seconds : 0.0;
+    out.path = path;
+    out.current_frame_index = 0;
+
+    const std::string decode_command = "ffmpeg -v error -stream_loop -1 -i " + quoted_path +
+                                       " -f rawvideo -pix_fmt rgba - 2>/dev/null";
+    out.pipe = popen(decode_command.c_str(), "r");
+    if (out.pipe == nullptr) {
+        std::cerr << "failed to start video decode for " << path << '\n';
         return false;
     }
 
     const std::size_t frame_bytes =
         static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
-    if (frame_bytes == 0 || raw_video->size() < frame_bytes) {
-        std::cerr << "video has no decoded frames: " << path << '\n';
-        return false;
+    out.pending_frame.resize(frame_bytes);
+    out.pixels.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+
+    std::size_t pending_bytes = 0;
+    while (pending_bytes < frame_bytes) {
+        const ssize_t bytes_read = read(fileno(out.pipe), out.pending_frame.data() + pending_bytes,
+                                        frame_bytes - pending_bytes);
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && errno == EINTR) {
+                continue;
+            }
+            std::cerr << "video has no decoded frames: " << path << '\n';
+            out.close();
+            return false;
+        }
+        pending_bytes += static_cast<std::size_t>(bytes_read);
     }
 
-    const std::size_t frame_count = raw_video->size() / frame_bytes;
-    out.width = width;
-    out.height = height;
-    out.frames_per_second = frames_per_second;
-    out.frames.clear();
-    out.frames.reserve(frame_count);
-
-    for (std::size_t frame = 0; frame < frame_count; ++frame) {
-        std::vector<std::uint32_t> pixels;
-        pixels.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
-        const auto* bytes =
-            reinterpret_cast<const std::uint8_t*>(raw_video->data() + frame * frame_bytes);
-        for (std::size_t pixel = 0; pixel < pixels.size(); ++pixel) {
-            const std::uint8_t r = bytes[pixel * 4U + 0U];
-            const std::uint8_t g = bytes[pixel * 4U + 1U];
-            const std::uint8_t b = bytes[pixel * 4U + 2U];
-            const std::uint8_t a = bytes[pixel * 4U + 3U];
-            pixels[pixel] = (static_cast<std::uint32_t>(a) << 24U) |
+    for (std::size_t pixel = 0; pixel < out.pixels.size(); ++pixel) {
+        const std::uint8_t r = out.pending_frame[pixel * 4U + 0U];
+        const std::uint8_t g = out.pending_frame[pixel * 4U + 1U];
+        const std::uint8_t b = out.pending_frame[pixel * 4U + 2U];
+        const std::uint8_t a = out.pending_frame[pixel * 4U + 3U];
+        out.pixels[pixel] = (static_cast<std::uint32_t>(a) << 24U) |
                             (static_cast<std::uint32_t>(b) << 16U) |
                             (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
-        }
-        out.frames.push_back(std::move(pixels));
     }
 
     return true;
 }
 
-void update_video_channels(ast::ChannelSet& channels,
-                           const std::array<VideoChannel, 4>& video_channels, double time) {
+bool read_next_video_frame(VideoChannel& video) {
+    if (video.pipe == nullptr) {
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(video.width) * static_cast<std::size_t>(video.height) * 4U;
+    video.pending_frame.resize(frame_bytes);
+
+    std::size_t pending_bytes = 0;
+    while (pending_bytes < frame_bytes) {
+        const ssize_t bytes_read =
+            read(fileno(video.pipe), video.pending_frame.data() + pending_bytes,
+                 frame_bytes - pending_bytes);
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+        pending_bytes += static_cast<std::size_t>(bytes_read);
+    }
+
+    video.pixels.resize(static_cast<std::size_t>(video.width) *
+                        static_cast<std::size_t>(video.height));
+    for (std::size_t pixel = 0; pixel < video.pixels.size(); ++pixel) {
+        const std::uint8_t r = video.pending_frame[pixel * 4U + 0U];
+        const std::uint8_t g = video.pending_frame[pixel * 4U + 1U];
+        const std::uint8_t b = video.pending_frame[pixel * 4U + 2U];
+        const std::uint8_t a = video.pending_frame[pixel * 4U + 3U];
+        video.pixels[pixel] = (static_cast<std::uint32_t>(a) << 24U) |
+                              (static_cast<std::uint32_t>(b) << 16U) |
+                              (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+    }
+    ++video.current_frame_index;
+    return true;
+}
+
+bool update_video_channels(ast::ChannelSet& channels, std::array<VideoChannel, 4>& video_channels,
+                           double time) {
     for (std::size_t i = 0; i < video_channels.size(); ++i) {
-        const VideoChannel& video = video_channels[i];
+        VideoChannel& video = video_channels[i];
         if (!video.loaded()) {
             continue;
         }
 
-        const auto frame_index =
-            static_cast<std::size_t>(static_cast<long long>(time * video.frames_per_second) %
-                                     static_cast<long long>(video.frames.size()));
+        const long long target_frame =
+            std::max(0LL, static_cast<long long>(std::floor(time * video.frames_per_second)));
+        while (video.current_frame_index < target_frame) {
+            if (!read_next_video_frame(video)) {
+                std::cerr << "video decode ended on channel " << i << '\n';
+                return false;
+            }
+        }
+
+        const double playback_time =
+            video.duration_seconds > 0.0
+                ? std::fmod(static_cast<double>(video.current_frame_index) /
+                                video.frames_per_second,
+                            video.duration_seconds)
+                : static_cast<double>(video.current_frame_index) / video.frames_per_second;
         channels.image[i].width = video.width;
         channels.image[i].height = video.height;
-        channels.image[i].time =
-            static_cast<float>(static_cast<double>(frame_index) / video.frames_per_second);
+        channels.image[i].time = static_cast<float>(playback_time);
         channels.image[i].pixels.clear();
-        channels.image[i].external_pixels = &video.frames[frame_index];
+        channels.image[i].external_pixels = &video.pixels;
     }
+    return true;
 }
 
 void pack_webcam_frame(WebcamChannel& webcam) {
-    webcam.pixels.resize(static_cast<std::size_t>(webcam.width) *
-                         static_cast<std::size_t>(webcam.height));
+    std::vector<std::uint32_t> packed;
+    packed.resize(static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height));
     for (int y = 0; y < webcam.height; ++y) {
         for (int x = 0; x < webcam.width; ++x) {
             const auto src_pixel =
@@ -566,11 +665,15 @@ void pack_webcam_frame(WebcamChannel& webcam) {
             const std::uint8_t g = webcam.pending_frame[src_pixel * 4U + 1U];
             const std::uint8_t b = webcam.pending_frame[src_pixel * 4U + 2U];
             const std::uint8_t a = webcam.pending_frame[src_pixel * 4U + 3U];
-            webcam.pixels[dst_pixel] =
+            packed[dst_pixel] =
                 (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
                 (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
         }
     }
+
+    const std::lock_guard<std::mutex> lock(webcam.mutex);
+    webcam.pixels = std::move(packed);
+    webcam.has_frame = true;
 }
 
 bool read_webcam_initial_frame(WebcamChannel& webcam) {
@@ -610,7 +713,10 @@ bool set_pipe_nonblocking(FILE* pipe) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
+bool drain_webcam_frame(WebcamChannel& webcam);
+
 bool open_webcam_channel(const std::string& device, WebcamChannel& out) {
+    out.close();
     out.width = 320;
     out.height = 240;
     const std::string command =
@@ -635,6 +741,17 @@ bool open_webcam_channel(const std::string& device, WebcamChannel& out) {
         out.pipe = nullptr;
         return false;
     }
+    out.failed = false;
+    out.running = true;
+    out.worker = std::thread([&out]() {
+        while (out.running) {
+            if (!drain_webcam_frame(out)) {
+                out.failed = true;
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+    });
     return true;
 }
 
@@ -674,7 +791,7 @@ bool drain_webcam_frame(WebcamChannel& webcam) {
         return false;
     }
 
-    return got_complete_frame || !webcam.pixels.empty();
+    return got_complete_frame || webcam.has_frame;
 }
 
 bool update_webcam_channels(ast::ChannelSet& channels,
@@ -684,15 +801,18 @@ bool update_webcam_channels(ast::ChannelSet& channels,
         if (webcam.pipe == nullptr) {
             continue;
         }
-        if (!drain_webcam_frame(webcam)) {
+        if (webcam.failed) {
             std::cerr << "webcam stream ended on channel " << i << '\n';
             return false;
         }
         channels.image[i].width = webcam.width;
         channels.image[i].height = webcam.height;
         channels.image[i].time = time;
-        channels.image[i].pixels.clear();
-        channels.image[i].external_pixels = &webcam.pixels;
+        channels.image[i].external_pixels = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock(webcam.mutex);
+            channels.image[i].pixels = webcam.pixels;
+        }
     }
     return true;
 }
@@ -1161,7 +1281,11 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    update_video_channels(channels, video_channels, 0.0);
+    if (!update_video_channels(channels, video_channels, 0.0)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
 
     std::array<WebcamChannel, 4> webcam_channels;
     for (std::size_t i = 0; i < args.webcam_paths.size(); ++i) {
@@ -1208,7 +1332,11 @@ int main(int argc, char** argv) {
         const auto measure_start = std::chrono::steady_clock::now();
         for (int frame = 0; frame < frame_count; ++frame) {
             const float time = static_cast<float>(frame) / 60.0F;
-            update_video_channels(channels, video_channels, static_cast<double>(time));
+            if (!update_video_channels(channels, video_channels, static_cast<double>(time))) {
+                IMG_Quit();
+                SDL_Quit();
+                return 1;
+            }
             if (!update_webcam_channels(channels, webcam_channels, time)) {
                 IMG_Quit();
                 SDL_Quit();
@@ -1368,7 +1496,11 @@ int main(int argc, char** argv) {
         const auto now = std::chrono::steady_clock::now();
         const std::chrono::duration<float> elapsed = now - start;
         const std::chrono::duration<float> delta = now - previous_frame_time;
-        update_video_channels(channels, video_channels, static_cast<double>(elapsed.count()));
+        if (!update_video_channels(channels, video_channels,
+                                   static_cast<double>(elapsed.count()))) {
+            running = false;
+            break;
+        }
         if (!update_webcam_channels(channels, webcam_channels, elapsed.count())) {
             running = false;
             break;

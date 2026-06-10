@@ -45,23 +45,24 @@ worth serious consideration. The intent is to pick through these one by one.
    Add a query instruction or input mapping for per-channel playback time. This
    mainly matters for video and future audio channels.
 
-8. Texture sampling modes. Deferred.
+8. Texture sampling modes. Dismissed.
 
    Keep `tex` nearest-neighbor and clamp-to-edge for now. Shadertoy exposes
    channel sampling controls, but this project can keep the default small and
    let shaders use `fract`, `min`, and `max` when they want custom wrapping or
    clamping behavior.
 
-9. Streaming video decode.
+9. Streaming video decode. Done.
 
-   `--videoN` currently preloads all decoded frames. Replace that with a small
-   ring buffer fed on demand before encouraging arbitrary long videos.
+   `--videoN` now streams raw frames from an ffmpeg pipe with looping enabled
+   and keeps only the current decoded frame instead of preloading the whole
+   clip.
 
-10. Threaded live input capture.
+10. Threaded live input capture. Done.
 
-    `--webcamN` currently drains a nonblocking pipe during the app loop. Moving
-    capture into a background thread with a small ring buffer would isolate
-    rendering from camera or decoder stalls.
+    `--webcamN` now drains its nonblocking ffmpeg pipe on a background worker
+    thread. The render loop copies the latest complete frame into the channel
+    snapshot instead of doing capture work inline.
 
 11. Keyboard and gamepad input. Done.
 
