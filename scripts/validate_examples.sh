@@ -10,6 +10,9 @@ cd "${repo_root}"
 ./build/asm-shader-toy examples/basics/consts.asm --dry-run
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/subroutines.asm --dry-run
+./build/asm-shader-toy examples/basics/subroutines.asm \
+    --emit-wgsl /tmp/asm-shader-toy-subroutines.wgsl
+grep -q "call_stack" /tmp/asm-shader-toy-subroutines.wgsl
 ./build/asm-shader-toy examples/basics/time_pulse.asm --dry-run
 ./build/asm-shader-toy examples/basics/time_pulse.asm --emit-wgsl /tmp/asm-shader-toy-time-pulse.wgsl
 grep -q "@compute @workgroup_size" /tmp/asm-shader-toy-time-pulse.wgsl

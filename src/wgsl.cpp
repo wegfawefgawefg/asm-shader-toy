@@ -1,5 +1,6 @@
 #include "ast/wgsl.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <iomanip>
@@ -146,11 +147,10 @@ bool supported_op(Op op) {
     case Op::Mwheel:
     case Op::Gbtn:
     case Op::Gaxis:
+    case Op::Call:
     case Op::Ret:
     case Op::Halt:
         return true;
-    case Op::Call:
-        return false;
     }
     return false;
 }
@@ -324,6 +324,8 @@ void emit_header(std::ostringstream& out, const WgslOptions& options) {
            "    var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);\n"
            "    var pc: i32 = 0;\n"
            "    var steps: i32 = 0;\n"
+           "    var call_stack: array<i32, 32>;\n"
+           "    var call_depth: i32 = 0;\n"
            "    loop {\n"
         << "        if (pc < 0 || steps >= " << options.max_steps
         << ") {\n"
@@ -344,7 +346,7 @@ void emit_footer(std::ostringstream& out) {
 }
 
 void emit_instruction(std::ostringstream& out, const IrInstruction& instruction, int pc,
-                      int program_size) {
+                      int program_size, const WgslOptions& options) {
     const auto& o = instruction.operands;
     out << "        case " << pc << ": {\n";
     if (!instruction.file.empty()) {
@@ -630,12 +632,25 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << '\n'
             << "            pc = " << next_pc(pc) << ";\n";
         break;
+    case Op::Call:
+        out << "            if (call_depth >= " << options.max_call_depth << ") {\n"
+            << "                pc = -1;\n"
+            << "            } else {\n"
+            << "                call_stack[call_depth] = " << next_pc(pc) << ";\n"
+            << "                call_depth = call_depth + 1;\n"
+            << "                pc = " << target_operand(o[0]) << ";\n"
+            << "            }\n";
+        break;
     case Op::Ret:
+        out << "            if (call_depth > 0) {\n"
+            << "                call_depth = call_depth - 1;\n"
+            << "                pc = call_stack[call_depth];\n"
+            << "            } else {\n"
+            << "                pc = " << program_size << ";\n"
+            << "            }\n";
+        break;
     case Op::Halt:
         out << "            pc = " << program_size << ";\n";
-        break;
-    case Op::Call:
-        out << "            pc = -1;\n";
         break;
     }
     out << "        }\n";
@@ -645,6 +660,8 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
 
 WgslCompileResult compile_wgsl(const IrProgram& program, const WgslOptions& options) {
     WgslCompileResult result;
+    const WgslOptions effective_options{std::max(1, options.max_steps),
+                                        std::clamp(options.max_call_depth, 0, 32)};
     for (const IrInstruction& instruction : program.code) {
         if (!supported_op(instruction.op)) {
             add_diag(result.diagnostics, instruction,
@@ -657,10 +674,10 @@ WgslCompileResult compile_wgsl(const IrProgram& program, const WgslOptions& opti
     }
 
     std::ostringstream out;
-    emit_header(out, options);
+    emit_header(out, effective_options);
     for (int pc = 0; pc < static_cast<int>(program.code.size()); ++pc) {
         emit_instruction(out, program.code[static_cast<std::size_t>(pc)], pc,
-                         static_cast<int>(program.code.size()));
+                         static_cast<int>(program.code.size()), effective_options);
     }
     emit_footer(out);
     result.source = out.str();

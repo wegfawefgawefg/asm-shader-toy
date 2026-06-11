@@ -1619,7 +1619,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         const ast::WgslCompileResult wgsl =
-            ast::compile_wgsl(assembled.program, ast::WgslOptions{args.max_steps});
+            ast::compile_wgsl(assembled.program, ast::WgslOptions{args.max_steps, 32});
         if (!wgsl.ok()) {
             print_diagnostics(wgsl.diagnostics);
             return 1;

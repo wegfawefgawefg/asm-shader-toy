@@ -637,7 +637,7 @@ void test_wgsl_emits_live_input_subset() {
             "WGSL source declares gamepad axis helper");
 }
 
-void test_wgsl_reports_unsupported_ops() {
+void test_wgsl_emits_call_and_ret_subset() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         call helper
         out8 r16, 0, 0, 255
@@ -647,12 +647,15 @@ void test_wgsl_reports_unsupported_ops() {
         ret
     )");
 
-    require(result.ok(), "unsupported WGSL fixture assembles");
+    require(result.ok(), "WGSL call fixture assembles");
     const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
-    require(!wgsl.ok(), "WGSL emitter rejects unsupported ops");
-    require(!wgsl.diagnostics.empty(), "WGSL unsupported op has diagnostics");
-    require(wgsl.diagnostics[0].message.find("call") != std::string::npos,
-            "WGSL unsupported op diagnostic names the opcode");
+    require(wgsl.ok(), "WGSL emitter accepts call/ret subset");
+    require(wgsl.source.find("var call_stack: array<i32, 32>") != std::string::npos,
+            "WGSL source declares call stack");
+    require(wgsl.source.find("call_stack[call_depth]") != std::string::npos,
+            "WGSL source pushes return addresses");
+    require(wgsl.source.find("pc = call_stack[call_depth]") != std::string::npos,
+            "WGSL source pops return addresses");
 }
 
 void test_file_dependencies_include_main_and_includes() {
@@ -806,7 +809,7 @@ int main() {
     test_wgsl_emits_arithmetic_control_and_output_subset();
     test_wgsl_emits_texture_and_channel_metadata_subset();
     test_wgsl_emits_live_input_subset();
-    test_wgsl_reports_unsupported_ops();
+    test_wgsl_emits_call_and_ret_subset();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();
     test_recursive_include_reports_error();

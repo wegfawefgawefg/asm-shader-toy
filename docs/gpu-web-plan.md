@@ -31,11 +31,11 @@ is an accelerating backend for programs that fit the validated subset.
   It currently targets deterministic arithmetic, unary math, comparisons,
   direct branches, bounded program-counter loops, `tex`, `texel`, `chdim`,
   `chtime`, `chsrate`, `key`, `mbtn`, `mwheel`, `gbtn`, `gaxis`, `out`,
-  `out8`, `ret`, and `halt`.
+  `out8`, `call`, `ret`, and `halt`.
 - The native CLI exposes that compiler through `--emit-wgsl path|-`, which
   writes WGSL and exits before SDL/media setup.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Calls, native WebGPU execution, and the browser runner are still
+  falling back. Native WebGPU execution and the browser runner are still
   unimplemented.
 
 ## Why WGSL First
