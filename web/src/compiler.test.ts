@@ -46,6 +46,30 @@ ret
     expect(result.wgsl).toContain("pc = call_stack[call_depth]");
   });
 
+  test("prunes unreachable instructions before emitting WGSL", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `jmp live
+dead:
+out 1.0, 0.0, 0.0, 1.0
+ret
+live:
+out 0.0, 1.0, 0.0, 1.0
+ret
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).not.toContain("main.asm:3");
+    expect(result.wgsl).toContain("main.asm:6");
+    expect(result.wgsl).toContain("pc = 1;");
+  });
+
   test("compiles texture and channel metadata ops", () => {
     const result = compileAsmToWgsl(
       [

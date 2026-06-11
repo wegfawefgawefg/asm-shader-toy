@@ -47,6 +47,7 @@ describe("template projects", () => {
     expect(pixelated.settings.scale).toBe(4);
     expect(pixelated.settings.maxSteps).toBe(4096);
     expect(pixelated.settings.wgsl).toContain("steps >= 4096");
+    expect(pixelated.settings.wgsl.match(/^        case /gm)?.length ?? 0).toBeLessThan(120);
   });
 
   test("preloads useful channel assets for media templates", () => {

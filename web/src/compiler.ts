@@ -702,6 +702,125 @@ function target(operand: Operand): number {
   return operand.kind === "immediate" ? operand.value : -1;
 }
 
+function targetOperandIndices(op: string): number[] {
+  switch (op) {
+    case "jmp":
+    case "call":
+      return [0];
+    case "jnz":
+    case "jz":
+      return [1];
+    case "jeq":
+    case "jne":
+    case "jlt":
+    case "jle":
+    case "jgt":
+    case "jge":
+      return [2];
+    default:
+      return [];
+  }
+}
+
+function instructionSuccessors(instruction: Instruction, pc: number, programSize: number): number[] {
+  const next = pc + 1;
+  const o = instruction.operands;
+  switch (instruction.op) {
+    case "jmp":
+      return [target(o[0])];
+    case "jnz":
+    case "jz":
+      return [target(o[1]), next];
+    case "jeq":
+    case "jne":
+    case "jlt":
+    case "jle":
+    case "jgt":
+    case "jge":
+      return [target(o[2]), next];
+    case "call":
+      return [target(o[0]), next];
+    case "ret":
+    case "halt":
+      return [];
+    default:
+      return next < programSize ? [next] : [];
+  }
+}
+
+function pruneUnreachable(instructions: Instruction[]): Instruction[] {
+  if (instructions.length === 0) {
+    return instructions;
+  }
+  const reachable = new Array<boolean>(instructions.length).fill(false);
+  const stack = [0];
+  while (stack.length > 0) {
+    const pc = stack.pop()!;
+    if (pc < 0 || pc >= instructions.length || reachable[pc]) {
+      continue;
+    }
+    reachable[pc] = true;
+    for (const successor of instructionSuccessors(instructions[pc], pc, instructions.length)) {
+      if (successor >= 0 && successor < instructions.length && !reachable[successor]) {
+        stack.push(successor);
+      }
+    }
+  }
+
+  const remap = new Map<number, number>();
+  for (let pc = 0; pc < instructions.length; ++pc) {
+    if (reachable[pc]) {
+      remap.set(pc, remap.size);
+    }
+  }
+
+  return instructions.filter((_, pc) => reachable[pc]).map((instruction) => {
+    const targetIndices = new Set(targetOperandIndices(instruction.op));
+    return {
+      ...instruction,
+      operands: instruction.operands.map((operand, index) => {
+        if (!targetIndices.has(index) || operand.kind !== "immediate") {
+          return operand;
+        }
+        return { kind: "immediate", value: remap.get(operand.value) ?? -1 };
+      })
+    };
+  });
+}
+
+function isControlFlow(op: string): boolean {
+  return (
+    op === "jmp" ||
+    op === "jnz" ||
+    op === "jz" ||
+    op === "jeq" ||
+    op === "jne" ||
+    op === "jlt" ||
+    op === "jle" ||
+    op === "jgt" ||
+    op === "jge" ||
+    op === "call" ||
+    op === "ret" ||
+    op === "halt"
+  );
+}
+
+function blockStarts(instructions: Instruction[]): number[] {
+  const starts = new Set<number>([0]);
+  for (let pc = 0; pc < instructions.length; ++pc) {
+    for (const index of targetOperandIndices(instructions[pc].op)) {
+      const operand = instructions[pc].operands[index];
+      if (operand?.kind === "immediate" && operand.value >= 0 && operand.value < instructions.length) {
+        starts.add(operand.value);
+      }
+    }
+    if (isControlFlow(instructions[pc].op) && pc + 1 < instructions.length) {
+      starts.add(pc + 1);
+    }
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
 function header(maxSteps: number): string {
   return `struct AstInputs {
     time: f32,
@@ -947,7 +1066,9 @@ function emitInstruction(instruction: Instruction, pc: number, programSize: numb
 }
 
 export function compileAsmToWgsl(files: ProjectSource[], main: string, maxSteps = 4096): CompileResult {
-  const { instructions, diagnostics } = assemble(files, main);
+  const assembled = assemble(files, main);
+  const diagnostics = assembled.diagnostics;
+  const instructions = pruneUnreachable(assembled.instructions);
   for (const instruction of instructions) {
     if (!emittedOps.has(instruction.op)) {
       addDiagnostic(diagnostics, instruction.file, instruction.line, `opcode '${instruction.op}' is not supported by the browser compiler yet`);
@@ -957,9 +1078,16 @@ export function compileAsmToWgsl(files: ProjectSource[], main: string, maxSteps 
     return { wgsl: "", diagnostics };
   }
   let wgsl = header(maxSteps);
-  instructions.forEach((instruction, pc) => {
-    wgsl += `        case ${pc}: {\n`;
-    wgsl += emitInstruction(instruction, pc, instructions.length);
+  const starts = blockStarts(instructions);
+  starts.forEach((start, index) => {
+    const end = starts[index + 1] ?? instructions.length;
+    wgsl += `        case ${start}: {\n`;
+    for (let pc = start; pc < end; ++pc) {
+      wgsl += emitInstruction(instructions[pc], pc, instructions.length);
+      if (isControlFlow(instructions[pc].op)) {
+        break;
+      }
+    }
     wgsl += "        }\n";
   });
   wgsl += `        default: { pc = -1; }
