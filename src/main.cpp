@@ -46,6 +46,8 @@ struct Args {
     std::string save_frame_path;
     bool emit_wgsl = false;
     std::string emit_wgsl_path;
+    bool emit_wgsl_bundle = false;
+    std::string emit_wgsl_bundle_path;
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> video_paths;
     std::array<std::string, 4> webcam_paths;
@@ -366,6 +368,15 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.emit_wgsl_path = std::string{*value};
             continue;
         }
+        if (arg == "--emit-wgsl-bundle") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.emit_wgsl_bundle = true;
+            args.emit_wgsl_bundle_path = std::string{*value};
+            continue;
+        }
         if (arg == "--no-graphics" || arg == "--nographics") {
             args.no_graphics = true;
             if (args.frames < 0) {
@@ -493,6 +504,7 @@ void print_usage() {
         << "       --no-graphics --frames N renders N CPU frames without a window\n"
         << "       --save-frame path.png renders one headless frame to a PNG\n"
         << "       --emit-wgsl path|'-' compiles the supported GPU subset to WGSL and exits\n"
+        << "       --emit-wgsl-bundle dir emits image.wgsl plus bufferN.wgsl files and exits\n"
         << "       --fps shows a small FPS overlay in graphical runs\n"
         << "       --measure-fps N renders N CPU frames and prints average FPS\n"
         << "       graphical runs hot reload the program and its includes on save\n";
@@ -1406,6 +1418,60 @@ bool write_text_output(const std::string& path, const std::string& text) {
     return static_cast<bool>(output);
 }
 
+bool compile_and_write_wgsl(const ast::Program& program, const ast::WgslOptions& options,
+                            const std::filesystem::path& path) {
+    const ast::WgslCompileResult wgsl = ast::compile_wgsl(program, options);
+    if (!wgsl.ok()) {
+        print_diagnostics(wgsl.diagnostics);
+        return false;
+    }
+    return write_text_output(path.string(), wgsl.source);
+}
+
+bool emit_wgsl_bundle(const Args& args, const ast::Program& image_program,
+                      const std::array<std::optional<ast::AssembleResult>, 4>& buffer_programs) {
+    if (args.emit_wgsl_bundle_path == "-") {
+        std::cerr << "--emit-wgsl-bundle expects a directory path, not '-'\n";
+        return false;
+    }
+
+    const std::filesystem::path output_dir{args.emit_wgsl_bundle_path};
+    std::error_code error;
+    std::filesystem::create_directories(output_dir, error);
+    if (error) {
+        std::cerr << "could not create WGSL bundle directory: " << output_dir << '\n';
+        return false;
+    }
+
+    const ast::WgslOptions options{args.max_steps, 32};
+    if (!compile_and_write_wgsl(image_program, options, output_dir / "image.wgsl")) {
+        return false;
+    }
+
+    std::ofstream manifest{output_dir / "manifest.txt"};
+    if (!manifest) {
+        std::cerr << "could not open WGSL bundle manifest: " << (output_dir / "manifest.txt")
+                  << '\n';
+        return false;
+    }
+    manifest << "image image.wgsl\n";
+    manifest << "size " << args.width << " " << args.height << '\n';
+    manifest << "max_steps " << args.max_steps << '\n';
+
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (!buffer_programs[i].has_value()) {
+            continue;
+        }
+        const std::string filename = "buffer" + std::to_string(i) + ".wgsl";
+        if (!compile_and_write_wgsl(buffer_programs[i]->program, options, output_dir / filename)) {
+            return false;
+        }
+        manifest << "buffer " << i << " " << filename << '\n';
+    }
+
+    return static_cast<bool>(manifest);
+}
+
 void ensure_buffer_storage(const Args& args,
                            std::array<std::vector<std::uint32_t>, 4>& previous_buffers,
                            std::array<std::vector<std::uint32_t>, 4>& current_buffers) {
@@ -1613,9 +1679,17 @@ int main(int argc, char** argv) {
         print_diagnostics(assembled.diagnostics);
         return 1;
     }
+    std::array<std::optional<ast::AssembleResult>, 4> buffer_programs;
+    if (!assemble_buffers(args, buffer_programs)) {
+        return 1;
+    }
+    if (args.emit_wgsl_bundle) {
+        return emit_wgsl_bundle(args, assembled.program, buffer_programs) ? 0 : 1;
+    }
     if (args.emit_wgsl) {
         if (has_buffer_paths(args)) {
-            std::cerr << "--emit-wgsl does not support feedback buffer passes yet\n";
+            std::cerr << "--emit-wgsl does not support feedback buffer passes; use "
+                         "--emit-wgsl-bundle instead\n";
             return 1;
         }
         const ast::WgslCompileResult wgsl =
@@ -1625,10 +1699,6 @@ int main(int argc, char** argv) {
             return 1;
         }
         return write_text_output(args.emit_wgsl_path, wgsl.source) ? 0 : 1;
-    }
-    std::array<std::optional<ast::AssembleResult>, 4> buffer_programs;
-    if (!assemble_buffers(args, buffer_programs)) {
-        return 1;
     }
 
     if (args.dry_run && !has_channel_paths(args) && !has_video_paths(args) &&

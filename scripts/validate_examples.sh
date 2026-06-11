@@ -27,6 +27,15 @@ grep -q "ast_key_state" /tmp/asm-shader-toy-live-controls.wgsl
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
     --dry-run
+rm -rf /tmp/asm-shader-toy-wgsl-bundle
+./build/asm-shader-toy examples/buffers/life_display.asm \
+    --buffer0 examples/buffers/life_buffer.asm \
+    --emit-wgsl-bundle /tmp/asm-shader-toy-wgsl-bundle
+test -f /tmp/asm-shader-toy-wgsl-bundle/image.wgsl
+test -f /tmp/asm-shader-toy-wgsl-bundle/buffer0.wgsl
+grep -q "image image.wgsl" /tmp/asm-shader-toy-wgsl-bundle/manifest.txt
+grep -q "buffer 0 buffer0.wgsl" /tmp/asm-shader-toy-wgsl-bundle/manifest.txt
+grep -q "textureLoad(channel0_texture" /tmp/asm-shader-toy-wgsl-bundle/buffer0.wgsl
 ./build/asm-shader-toy examples/multifile/main.asm --dry-run
 ./build/asm-shader-toy examples/perf/heavy.asm --dry-run
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm --dry-run

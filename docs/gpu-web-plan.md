@@ -36,6 +36,9 @@ is an accelerating backend for programs that fit the validated subset.
   `out8`, `call`, `ret`, and `halt`.
 - The native CLI exposes that compiler through `--emit-wgsl path|-`, which
   writes WGSL and exits before SDL/media setup.
+- The native CLI also exposes `--emit-wgsl-bundle dir`, which writes
+  `image.wgsl`, any `bufferN.wgsl` feedback pass shaders, and a small manifest
+  without initializing SDL/media.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
   falling back. Native WebGPU execution is still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,

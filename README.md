@@ -37,6 +37,14 @@ Validate every checked-in example without opening a window:
 This also runs the browser tests/build with native-vs-browser WGSL compiler
 parity fixtures enabled.
 
+Emit WGSL for a full image-plus-buffer project:
+
+```sh
+./build/asm-shader-toy examples/buffers/life_display.asm \
+  --buffer0 examples/buffers/life_buffer.asm \
+  --emit-wgsl-bundle /tmp/asm-shader-toy-wgsl
+```
+
 Build the browser prototype:
 
 ```sh
