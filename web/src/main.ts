@@ -145,6 +145,7 @@ appRoot.innerHTML = `
         <button class="button" data-action="copy-frame">Copy PNG</button>
         <button class="button" data-action="record-video">Record</button>
         <button class="button" data-action="toggle-wgsl">WGSL</button>
+        <output class="renderer-badge" data-renderer>Renderer: starting</output>
         <output data-fps>0 fps</output>
       </div>
       <div class="split" data-split>
@@ -176,6 +177,7 @@ const wgslPanel = appRoot.querySelector<HTMLElement>("[data-wgsl-panel]")!;
 const wgslEditorHost = appRoot.querySelector<HTMLDivElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
+const rendererText = appRoot.querySelector<HTMLOutputElement>("[data-renderer]")!;
 const fpsText = appRoot.querySelector<HTMLOutputElement>("[data-fps]")!;
 const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
 const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
@@ -490,6 +492,9 @@ try {
   gpuContext = await initWebGpu(canvas);
   program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
   setDiagnostics();
+  rendererText.textContent = "Renderer: WebGPU";
+  rendererText.dataset.kind = "webgpu";
+  rendererText.title = `Using WebGPU (${gpuContext.adapterLabel}).`;
   statusText.textContent = `WebGPU ready (${gpuContext.adapterLabel})`;
 } catch (error) {
   rendererError = error instanceof Error ? error.message : String(error);
@@ -497,6 +502,9 @@ try {
     glContext = initWebGl(canvas);
     glProgram = await createGlProgram(glContext, state.project.settings.glsl ?? "", state.project.settings, channelSources);
     setDiagnostics();
+    rendererText.textContent = "Renderer: WebGL2 fallback";
+    rendererText.dataset.kind = "webgl";
+    rendererText.title = "WebGPU was unavailable, so this is using the WebGL2 GPU fallback.";
     statusText.textContent = "WebGL2 ready (fallback)";
   } catch (fallbackError) {
     const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
@@ -506,6 +514,9 @@ WebGL2 fallback also failed:
 ${fallbackMessage}
 
 The editor and ASM compiler are still usable, but this browser could not start a GPU renderer.`);
+    rendererText.textContent = "Renderer: unavailable";
+    rendererText.dataset.kind = "unavailable";
+    rendererText.title = "No browser GPU renderer could be started.";
     statusText.textContent = "GPU renderer unavailable";
   }
 }

@@ -318,6 +318,34 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.renderer-badge {
+  min-height: 28px;
+  min-width: 142px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #3a434d;
+  padding: 0 8px;
+  color: #e6e8ea;
+  background: #20262d;
+  font-size: 12px;
+  font-variant-numeric: normal;
+}
+
+.renderer-badge[data-kind="webgpu"] {
+  border-color: #78d0ff;
+  color: #aee4ff;
+}
+
+.renderer-badge[data-kind="webgl"] {
+  border-color: #d7ff65;
+  color: #d7ff65;
+}
+
+.renderer-badge[data-kind="unavailable"] {
+  border-color: #ff8c8c;
+  color: #ffb4b4;
+}
+
 .split {
   display: grid;
   grid-template-columns: 1fr;
