@@ -13,12 +13,21 @@ type ProgramState = {
   source: string;
   sizeKey: string;
   computePipeline: GPUComputePipeline;
-  bindGroup: GPUBindGroup;
   uniformBuffer: GPUBuffer;
   outputTexture: GPUTexture;
   outputView: GPUTextureView;
   channelTextures: GPUTexture[];
   channelMetadata: ChannelSetting[];
+  bufferPasses: BufferPassState[];
+  bufferReadIndex: number;
+};
+
+type BufferPassState = {
+  channel: number;
+  source: string;
+  computePipeline: GPUComputePipeline;
+  textures: [GPUTexture, GPUTexture];
+  views: [GPUTextureView, GPUTextureView];
 };
 
 export type ChannelRuntimeSource = {
@@ -150,9 +159,10 @@ function writeUniforms(
   for (let channel = 0; channel < 4; ++channel) {
     const metadata = settings.channels[channel] ?? { width: 1, height: 1 };
     const source = channelSources.get(channel);
+    const buffer = settings.buffers?.[channel];
     const offset = 14 + channel * 4;
-    values[offset] = metadata.width || 1;
-    values[offset + 1] = metadata.height || 1;
+    values[offset] = buffer?.wgsl ? size.width : metadata.width || 1;
+    values[offset + 1] = buffer?.wgsl ? size.height : metadata.height || 1;
     values[offset + 2] =
       metadata.kind === "video" && source?.video
         ? source.video.currentTime
@@ -206,6 +216,18 @@ function makeLiveDataTexture(device: GPUDevice, width: number, height: number): 
   });
 }
 
+function makeOutputTexture(device: GPUDevice, width: number, height: number): GPUTexture {
+  return device.createTexture({
+    size: { width, height },
+    format: "rgba8unorm",
+    usage:
+      GPUTextureUsage.STORAGE_BINDING |
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_SRC |
+      GPUTextureUsage.RENDER_ATTACHMENT
+  });
+}
+
 export async function createProgram(
   context: GpuContext,
   source: string,
@@ -219,15 +241,7 @@ export async function createProgram(
     layout: "auto",
     compute: { module, entryPoint: "main" }
   });
-  const outputTexture = device.createTexture({
-    size: { width: size.width, height: size.height },
-    format: "rgba8unorm",
-    usage:
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_SRC |
-      GPUTextureUsage.RENDER_ATTACHMENT
-  });
+  const outputTexture = makeOutputTexture(device, size.width, size.height);
   const outputView = outputTexture.createView();
   const uniformBuffer = device.createBuffer({
     size: uniformByteSize,
@@ -251,24 +265,38 @@ export async function createProgram(
       return makeChannelTexture(device, channel);
     })
   );
-  const bindGroup = device.createBindGroup({
-    layout: computePipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: outputView },
-      { binding: 1, resource: { buffer: uniformBuffer } },
-      ...channelTextures.map((texture, index) => ({ binding: index + 2, resource: texture.createView() }))
-    ]
-  });
+  const bufferPasses = await Promise.all(
+    (settings.buffers ?? []).slice(0, 4).map(async (buffer, channel): Promise<BufferPassState | null> => {
+      if (!buffer?.wgsl) {
+        return null;
+      }
+      const bufferModule = device.createShaderModule({ code: buffer.wgsl });
+      const bufferPipeline = await device.createComputePipelineAsync({
+        layout: "auto",
+        compute: { module: bufferModule, entryPoint: "main" }
+      });
+      const first = makeOutputTexture(device, size.width, size.height);
+      const second = makeOutputTexture(device, size.width, size.height);
+      return {
+        channel,
+        source: buffer.wgsl,
+        computePipeline: bufferPipeline,
+        textures: [first, second],
+        views: [first.createView(), second.createView()]
+      };
+    })
+  );
   return {
     source,
     sizeKey: `${size.width}x${size.height}`,
     computePipeline,
-    bindGroup,
     uniformBuffer,
     outputTexture,
     outputView,
     channelTextures,
-    channelMetadata: normalizedChannels.slice(0, 4)
+    channelMetadata: normalizedChannels.slice(0, 4),
+    bufferPasses: bufferPasses.filter((buffer): buffer is BufferPassState => buffer !== null),
+    bufferReadIndex: 0
   };
 }
 
@@ -280,6 +308,10 @@ export function destroyProgram(program: ProgramState | null): void {
   program.uniformBuffer.destroy();
   for (const texture of program.channelTextures) {
     texture.destroy();
+  }
+  for (const buffer of program.bufferPasses) {
+    buffer.textures[0].destroy();
+    buffer.textures[1].destroy();
   }
 }
 
@@ -364,6 +396,14 @@ export function renderFrame(
   updateLiveChannelTextures(context, program, channelSources);
   writeUniforms(device, program.uniformBuffer, settings, frame, start, channelSources);
 
+  const baseChannelViews = program.channelTextures.map((texture) => texture.createView());
+  const readIndex = program.bufferReadIndex;
+  const writeIndex = 1 - readIndex;
+  const previousBufferViews = new Map(program.bufferPasses.map((buffer) => [buffer.channel, buffer.views[readIndex]]));
+  const currentBufferViews = new Map(program.bufferPasses.map((buffer) => [buffer.channel, buffer.views[writeIndex]]));
+  const previousChannelViews = baseChannelViews.map((view, channel) => previousBufferViews.get(channel) ?? view);
+  const currentChannelViews = baseChannelViews.map((view, channel) => currentBufferViews.get(channel) ?? view);
+
   const renderBindGroup = device.createBindGroup({
     layout: context.renderPipeline.getBindGroupLayout(0),
     entries: [
@@ -372,9 +412,32 @@ export function renderFrame(
     ]
   });
   const encoder = device.createCommandEncoder();
+  for (const buffer of program.bufferPasses) {
+    const bindGroup = device.createBindGroup({
+      layout: buffer.computePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: buffer.views[writeIndex] },
+        { binding: 1, resource: { buffer: program.uniformBuffer } },
+        ...previousChannelViews.map((view, index) => ({ binding: index + 2, resource: view }))
+      ]
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(buffer.computePipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(size.width / 8), Math.ceil(size.height / 8));
+    pass.end();
+  }
+  const imageBindGroup = device.createBindGroup({
+    layout: program.computePipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: program.outputView },
+      { binding: 1, resource: { buffer: program.uniformBuffer } },
+      ...currentChannelViews.map((view, index) => ({ binding: index + 2, resource: view }))
+    ]
+  });
   const computePass = encoder.beginComputePass();
   computePass.setPipeline(program.computePipeline);
-  computePass.setBindGroup(0, program.bindGroup);
+  computePass.setBindGroup(0, imageBindGroup);
   computePass.dispatchWorkgroups(Math.ceil(size.width / 8), Math.ceil(size.height / 8));
   computePass.end();
 
@@ -394,4 +457,7 @@ export function renderFrame(
   renderPass.end();
 
   device.queue.submit([encoder.finish()]);
+  if (program.bufferPasses.length > 0) {
+    program.bufferReadIndex = writeIndex;
+  }
 }

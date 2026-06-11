@@ -160,4 +160,33 @@ out8 value, 0, 0, 255
     expect(result.diagnostics).toEqual([]);
     expect(result.wgsl).toContain("ast_byte(128.0)");
   });
+
+  test("compiles a feedback buffer project pair", () => {
+    const files = [
+      {
+        path: "image.asm",
+        content: `.include <std/screen.inc>
+tex tex0_r, tex0_g, tex0_b, tex0_a, 0, uv_x, uv_y
+out tex0_r, tex0_r, tex0_r, 1.0
+`
+      },
+      {
+        path: "buffer.asm",
+        content: `.include <std/aliases.inc>
+texel tex0_r, tex0_g, tex0_b, tex0_a, 0, px, py
+add tmp0, tex0_r, 0.01
+fract tmp0, tmp0
+out tmp0, tmp0, tmp0, 1.0
+`
+      }
+    ];
+
+    const image = compileAsmToWgsl(files, "image.asm");
+    const buffer = compileAsmToWgsl(files, "buffer.asm");
+
+    expect(image.diagnostics).toEqual([]);
+    expect(buffer.diagnostics).toEqual([]);
+    expect(buffer.wgsl).toContain("textureLoad(channel0_texture");
+    expect(buffer.wgsl).toContain("textureStore");
+  });
 });

@@ -45,10 +45,12 @@ is an accelerating backend for programs that fit the validated subset.
   bind static images, generated noise textures, or mirrored webcam streams to
   `channel0..3`, and can upload live microphone analyser data as a 512x2 audio
   texture, and can use user-selected video files as looping channel textures.
+  Browser feedback buffers can be assigned from project files and are rendered
+  with ping-pong textures before the final image pass.
   Image/noise channels are preserved in project bundles; webcam, microphone, and
   video channels preserve metadata and reconnect through browser permission or
-  file selection. Audio-file channels, feedback buffers, and native WebGPU
-  execution are still unimplemented.
+  file selection. Audio-file channels and native WebGPU execution are still
+  unimplemented.
 
 ## Why WGSL First
 
@@ -147,7 +149,7 @@ Language features to support:
 - branches, `call`, `ret`, and `halt`
 - `tex`, `texel`, `chdim`, `chtime`, and `chsrate`
 - `key`, `mbtn`, `mwheel`, `gbtn`, and `gaxis`
-- feedback buffer passes
+- feedback buffer passes. Done in the browser prototype.
 
 Runtime/editor features to support:
 

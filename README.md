@@ -86,8 +86,8 @@ streams, microphone analyser channels, and user-selected video files can be
 loaded into `channel0..3` from the sidebar. Image/noise channels are preserved
 in exported/shared project bundles; webcam, microphone, and video channels save
 their metadata but reconnect through local browser permission or file selection.
-Feedback buffers and audio-file channels are still pending. For examples outside
-the browser
+Feedback buffer passes can be assigned to `buffer0..3` from project files in the
+sidebar. Audio-file channels are still pending. For examples outside the browser
 compiler subset, use the native CLI to emit WGSL, then paste it into the WGSL
 panel:
 

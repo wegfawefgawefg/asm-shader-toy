@@ -62,6 +62,7 @@ appRoot.innerHTML = `
         <input class="hidden-input" type="file" accept="application/json" data-import />
       </label>
       <button class="button" data-action="share">Copy Share URL</button>
+      <div class="buffer-list" data-buffers></div>
       <div class="channel-list" data-channels></div>
     </aside>
     <section class="editor-pane">
@@ -101,6 +102,7 @@ const wgslEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
 const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
+const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
 
 for (const name of Object.keys(sizePresets)) {
@@ -112,6 +114,14 @@ for (const name of Object.keys(sizePresets)) {
 
 function currentFile() {
   return state.project.files.find((file) => file.path === state.selectedFile) ?? state.project.files[0];
+}
+
+function bufferSettings() {
+  state.project.settings.buffers ??= [null, null, null, null];
+  while (state.project.settings.buffers.length < 4) {
+    state.project.settings.buffers.push(null);
+  }
+  return state.project.settings.buffers;
 }
 
 function syncCanvasSize(): void {
@@ -145,8 +155,37 @@ function renderProjectUi(): void {
   scaleInput.value = String(state.project.settings.scale);
   asmEditor.value = currentFile().content;
   wgslEditor.value = state.project.settings.wgsl;
+  renderBufferControls();
   renderChannelControls();
   syncCanvasSize();
+}
+
+function renderBufferControls(): void {
+  bufferList.replaceChildren();
+  const title = document.createElement("div");
+  title.className = "section-title";
+  title.textContent = "Buffers";
+  bufferList.append(title);
+  bufferSettings().forEach((buffer, index) => {
+    const label = document.createElement("label");
+    label.className = "buffer";
+    label.textContent = `buffer${index}`;
+    const select = document.createElement("select");
+    select.dataset.buffer = String(index);
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "none";
+    select.append(none);
+    for (const file of state.project.files) {
+      const option = document.createElement("option");
+      option.value = file.path;
+      option.textContent = file.path;
+      select.append(option);
+    }
+    select.value = buffer?.file ?? "";
+    label.append(select);
+    bufferList.append(label);
+  });
 }
 
 function renderChannelControls(): void {
@@ -397,16 +436,28 @@ async function setChannelVideo(index: number, file: File): Promise<void> {
 
 async function compileAsm(): Promise<void> {
   saveCurrentFile();
-  const result = compileAsmToWgsl(state.project.files, state.project.settings.main);
-  if (result.diagnostics.length > 0) {
-    diagnostics.textContent = result.diagnostics
-      .map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
-      .join("\n");
+  const diagnosticsList: string[] = [];
+  const imageResult = compileAsmToWgsl(state.project.files, state.project.settings.main);
+  diagnosticsList.push(
+    ...imageResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
+  );
+  for (const buffer of bufferSettings()) {
+    if (!buffer) {
+      continue;
+    }
+    const result = compileAsmToWgsl(state.project.files, buffer.file);
+    buffer.wgsl = result.wgsl;
+    diagnosticsList.push(
+      ...result.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
+    );
+  }
+  if (diagnosticsList.length > 0) {
+    diagnostics.textContent = diagnosticsList.join("\n");
     statusText.textContent = "ASM compile failed";
     return;
   }
-  state.project.settings.wgsl = result.wgsl;
-  wgslEditor.value = result.wgsl;
+  state.project.settings.wgsl = imageResult.wgsl;
+  wgslEditor.value = imageResult.wgsl;
   await compileWgsl();
 }
 
@@ -442,6 +493,10 @@ appRoot.addEventListener("input", (event) => {
   }
   if (target === mainSelect) {
     state.project.settings.main = mainSelect.value;
+  }
+  if (target instanceof HTMLSelectElement && target.dataset.buffer !== undefined) {
+    const index = Number(target.dataset.buffer);
+    bufferSettings()[index] = target.value ? { file: target.value, wgsl: "" } : null;
   }
 });
 

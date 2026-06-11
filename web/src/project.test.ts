@@ -15,6 +15,28 @@ describe("project bundles", () => {
 
     expect(project.settings.channels).toHaveLength(4);
     expect(project.settings.channels[0]).toMatchObject({ kind: "fallback", name: "channel0", width: 1, height: 1 });
+    expect(project.settings.buffers).toEqual([null, null, null, null]);
+  });
+
+  test("preserves browser feedback buffer slots", () => {
+    const project = normalizeProject({
+      files: [
+        { path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" },
+        { path: "buffer.asm", content: "out 1.0, 1.0, 1.0, 1.0\n" }
+      ],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [],
+        buffers: [{ file: "buffer.asm", wgsl: "compiled" }]
+      }
+    });
+
+    expect(project.settings.buffers).toHaveLength(4);
+    expect(project.settings.buffers?.[0]).toEqual({ file: "buffer.asm", wgsl: "compiled" });
+    expect(project.settings.buffers?.[1]).toBeNull();
   });
 
   test("preserves compact generated noise channels", () => {

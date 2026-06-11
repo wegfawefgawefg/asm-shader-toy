@@ -13,6 +13,7 @@ export type ProjectSettings = {
   size: SizePreset | `${number}x${number}`;
   scale: number;
   channels: ChannelSetting[];
+  buffers?: Array<BufferSetting | null>;
 };
 
 export type ProjectBundle = {
@@ -28,6 +29,11 @@ export type ChannelSetting = {
   imageDataUrl?: string;
   seed?: string;
   sampleRate?: number;
+};
+
+export type BufferSetting = {
+  file: string;
+  wgsl: string;
 };
 
 export const sizePresets: Record<SizePreset, { width: number; height: number }> = {
@@ -73,7 +79,8 @@ export function makeDefaultProject(): ProjectBundle {
         { kind: "fallback", name: "channel1", width: 1, height: 1 },
         { kind: "fallback", name: "channel2", width: 1, height: 1 },
         { kind: "fallback", name: "channel3", width: 1, height: 1 }
-      ]
+      ],
+      buffers: [null, null, null, null]
     }
   };
 }
@@ -97,11 +104,16 @@ export function normalizeProject(bundle: ProjectBundle): ProjectBundle {
   while (channels.length < 4) {
     channels.push({ kind: "fallback", name: `channel${channels.length}`, width: 1, height: 1 });
   }
+  const buffers = [...(bundle.settings.buffers ?? [])];
+  while (buffers.length < 4) {
+    buffers.push(null);
+  }
   return {
     ...bundle,
     settings: {
       ...bundle.settings,
-      channels: channels.slice(0, 4).map((channel, index) => normalizeChannel(channel, index))
+      channels: channels.slice(0, 4).map((channel, index) => normalizeChannel(channel, index)),
+      buffers: buffers.slice(0, 4).map((buffer) => (buffer?.file ? { file: buffer.file, wgsl: buffer.wgsl ?? "" } : null))
     }
   };
 }
