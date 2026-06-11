@@ -83,6 +83,13 @@ run_case "video_texel" \
     --time 0.5 \
     --frame 30
 
+run_case "audio_scope" \
+    "${repo_root}/examples/audio/audio_scope.asm" \
+    --audio0 "${repo_root}/examples/assets/audio/two_tone.wav" \
+    --size 64x32 \
+    --time 0.25 \
+    --frame 15
+
 echo "webgpu-frame: video_channel_smoke"
 "${frame_tool}" "${repo_root}/examples/video/video_channel.asm" \
     --video0 "${repo_root}/examples/assets/video/testsrc_160x90.mp4" \

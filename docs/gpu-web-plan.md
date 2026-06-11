@@ -47,11 +47,12 @@ is an accelerating backend for programs that fit the validated subset.
   supported hosts. The optional build also creates `ast-webgpu-frame`, an
   experimental headless renderer that runs one deterministic asm image pass on
   native WebGPU, uploads static image and generated noise channels, renders
-  feedback buffer passes, samples deterministic video file frames, can write a
-  PPM frame, and can compare GPU readback against the CPU VM.
+  feedback buffer passes, samples deterministic video and audio file frames, can
+  write a PPM frame, and can compare GPU readback against the CPU VM.
   `scripts/validate_webgpu_frame.sh` runs a small CPU-vs-GPU parity suite for
   supported deterministic examples, including one-image, two-image, and noise
-  texture programs plus deterministic feedback-buffer and video texel programs.
+  texture programs plus deterministic feedback-buffer, video texel, and audio
+  texture programs.
 - `ast-webgpu-surface-probe` opens an SDL window on Linux/X11, creates a native
   WebGPU surface, clears it, and presents frames. This proves the surface path
   but is not yet the full shader-presenting runner.

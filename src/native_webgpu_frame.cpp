@@ -1,13 +1,10 @@
 #define WEBGPU_CPP_IMPLEMENTATION
-#include <webgpu/webgpu.hpp>
-
 #include "ast/assembler.hpp"
 #include "ast/runtime.hpp"
 #include "ast/wgsl.hpp"
 
 #include <SDL.h>
 #include <SDL_image.h>
-
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -22,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <webgpu/webgpu.hpp>
 
 namespace {
 
@@ -45,6 +43,7 @@ struct Args {
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> noise_specs;
     std::array<std::string, 4> video_paths;
+    std::array<std::string, 4> audio_paths;
     std::array<std::string, 4> buffer_paths;
 };
 
@@ -74,6 +73,10 @@ constexpr std::array<SizePreset, 18> size_presets{{
     {"psp", 480, 272},
     {"spelunky", 320, 240},
 }};
+
+constexpr int audio_texture_width = 512;
+constexpr int audio_texture_height = 2;
+constexpr int audio_sample_rate = 44100;
 
 struct WebGpuContext {
     wgpu::Instance instance;
@@ -119,6 +122,7 @@ void print_usage() {
         << "       [--channel0 path] through [--channel3 path] load image inputs\n"
         << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n"
         << "       [--video0 path] through [--video3 path] sample video inputs with ffmpeg\n"
+        << "       [--audio0 path] through [--audio3 path] sample audio inputs with ffmpeg\n"
         << "       [--buffer0 path] through [--buffer3 path] run feedback buffer passes\n";
 }
 
@@ -232,8 +236,7 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
-        if (arg == "--noise0" || arg == "--noise1" || arg == "--noise2" ||
-            arg == "--noise3") {
+        if (arg == "--noise0" || arg == "--noise1" || arg == "--noise2" || arg == "--noise3") {
             const int channel = static_cast<int>(arg.back() - '0');
             std::string seed = std::to_string(channel + 1);
             if (i + 1 < argc) {
@@ -246,8 +249,7 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.noise_specs[static_cast<std::size_t>(channel)] = std::move(seed);
             continue;
         }
-        if (arg == "--video0" || arg == "--video1" || arg == "--video2" ||
-            arg == "--video3") {
+        if (arg == "--video0" || arg == "--video1" || arg == "--video2" || arg == "--video3") {
             const auto value = next();
             if (!value.has_value()) {
                 return std::nullopt;
@@ -256,8 +258,16 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.video_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
-        if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" ||
-            arg == "--buffer3") {
+        if (arg == "--audio0" || arg == "--audio1" || arg == "--audio2" || arg == "--audio3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.audio_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
+        if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
             const auto value = next();
             if (!value.has_value()) {
                 return std::nullopt;
@@ -287,10 +297,14 @@ float target_channel_time(const Args& args) {
     return args.time + static_cast<float>(args.frames - 1) * args.time_delta;
 }
 
-std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b,
-                         std::uint8_t a = 255) {
+std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 255) {
     return (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
            (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+}
+
+std::uint8_t sample_to_byte(float sample) {
+    const float normalized = std::clamp(sample * 0.5F + 0.5F, 0.0F, 1.0F);
+    return static_cast<std::uint8_t>(std::lround(normalized * 255.0F));
 }
 
 std::uint32_t hash_u32(std::uint32_t value) {
@@ -489,17 +503,17 @@ bool load_video_channel(const std::string& path, float sample_time, ast::ImageCh
         return false;
     }
 
-    const double playback_time =
-        duration_seconds > 0.0 ? std::fmod(std::max(0.0F, sample_time), duration_seconds)
-                               : std::max(0.0F, sample_time);
+    const double playback_time = duration_seconds > 0.0
+                                     ? std::fmod(std::max(0.0F, sample_time), duration_seconds)
+                                     : std::max(0.0F, sample_time);
     const long long target_frame =
         std::max(0LL, static_cast<long long>(std::floor(playback_time * frames_per_second)));
     const double snapped_time = frames_per_second > 0.0
                                     ? static_cast<double>(target_frame) / frames_per_second
                                     : playback_time;
 
-    const std::string decode_command = "ffmpeg -v error -ss " +
-                                       std::to_string(snapped_time) + " -i " + quoted_path +
+    const std::string decode_command = "ffmpeg -v error -ss " + std::to_string(snapped_time) +
+                                       " -i " + quoted_path +
                                        " -frames:v 1 -f rawvideo -pix_fmt rgba - 2>/dev/null";
     const std::size_t frame_bytes =
         static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
@@ -526,6 +540,79 @@ bool load_video_channel(const std::string& path, float sample_time, ast::ImageCh
     return true;
 }
 
+float audio_sample_at(const std::vector<float>& samples, std::size_t index) {
+    if (samples.empty()) {
+        return 0.0F;
+    }
+    return samples[index % samples.size()];
+}
+
+void build_audio_texture(const std::vector<float>& samples, int sample_rate, double time,
+                         std::vector<std::uint32_t>& pixels) {
+    pixels.resize(static_cast<std::size_t>(audio_texture_width * audio_texture_height));
+    const auto center =
+        static_cast<long long>(std::max(0.0, time) * static_cast<double>(sample_rate));
+    const long long half_width = audio_texture_width / 2;
+    for (int x = 0; x < audio_texture_width; ++x) {
+        const long long source = std::max(0LL, center - half_width + x);
+        const float wave = audio_sample_at(samples, static_cast<std::size_t>(source));
+        const std::uint8_t wave_byte = sample_to_byte(wave);
+        pixels[static_cast<std::size_t>(x)] = pack_rgba8(wave_byte, wave_byte, wave_byte);
+    }
+
+    constexpr int spectrum_bins = 128;
+    constexpr int window = 512;
+    constexpr float tau = 6.28318530717958647692F;
+    std::array<float, spectrum_bins> magnitudes{};
+    for (int bin = 0; bin < spectrum_bins; ++bin) {
+        float real = 0.0F;
+        float imag = 0.0F;
+        for (int n = 0; n < window; ++n) {
+            const long long source = std::max(0LL, center - window + n);
+            const float sample = audio_sample_at(samples, static_cast<std::size_t>(source));
+            const float phase = tau * static_cast<float>(bin + 1) * static_cast<float>(n) /
+                                static_cast<float>(window);
+            real += sample * std::cos(phase);
+            imag -= sample * std::sin(phase);
+        }
+        magnitudes[static_cast<std::size_t>(bin)] =
+            std::clamp(std::sqrt(real * real + imag * imag) / 32.0F, 0.0F, 1.0F);
+    }
+
+    for (int x = 0; x < audio_texture_width; ++x) {
+        const int bin = (x * spectrum_bins) / audio_texture_width;
+        const std::uint8_t magnitude = static_cast<std::uint8_t>(
+            std::lround(magnitudes[static_cast<std::size_t>(bin)] * 255.0F));
+        pixels[static_cast<std::size_t>(audio_texture_width + x)] =
+            pack_rgba8(magnitude, magnitude, magnitude);
+    }
+}
+
+bool load_audio_channel(const std::string& path, float sample_time, ast::ImageChannel& out) {
+    const std::string command =
+        "ffmpeg -v error -i " + shell_quote(path) + " -ac 1 -ar 44100 -f f32le -";
+    const std::optional<std::string> raw_audio = read_command_stdout(command);
+    if (!raw_audio.has_value() || raw_audio->size() < sizeof(float)) {
+        std::cerr << "ffmpeg audio decode failed for " << path << '\n';
+        return false;
+    }
+
+    std::vector<float> samples(raw_audio->size() / sizeof(float));
+    std::memcpy(samples.data(), raw_audio->data(), samples.size() * sizeof(float));
+    const double duration =
+        static_cast<double>(samples.size()) / static_cast<double>(audio_sample_rate);
+    const double audio_time =
+        duration > 0.0 ? std::fmod(std::max(0.0F, sample_time), duration) : 0.0;
+
+    out.width = audio_texture_width;
+    out.height = audio_texture_height;
+    out.time = static_cast<float>(audio_time);
+    out.sample_rate = static_cast<float>(audio_sample_rate);
+    out.external_pixels = nullptr;
+    build_audio_texture(samples, audio_sample_rate, audio_time, out.pixels);
+    return true;
+}
+
 bool load_channels(const Args& args, ast::ChannelSet& channels) {
     for (std::size_t i = 0; i < args.channel_paths.size(); ++i) {
         if (!args.channel_paths[i].empty() &&
@@ -542,6 +629,12 @@ bool load_channels(const Args& args, ast::ChannelSet& channels) {
     for (std::size_t i = 0; i < args.video_paths.size(); ++i) {
         if (!args.video_paths[i].empty() &&
             !load_video_channel(args.video_paths[i], channel_time, channels.image[i])) {
+            return false;
+        }
+    }
+    for (std::size_t i = 0; i < args.audio_paths.size(); ++i) {
+        if (!args.audio_paths[i].empty() &&
+            !load_audio_channel(args.audio_paths[i], channel_time, channels.image[i])) {
             return false;
         }
     }
@@ -618,8 +711,8 @@ std::vector<std::uint8_t> map_readback(wgpu::Device device, wgpu::Buffer buffer,
                                        std::uint64_t size) {
     bool mapped = false;
     bool map_failed = false;
-    auto map_callback = buffer.mapAsync(wgpu::MapMode::Read, 0, size,
-        [&](wgpu::BufferMapAsyncStatus status) {
+    auto map_callback =
+        buffer.mapAsync(wgpu::MapMode::Read, 0, size, [&](wgpu::BufferMapAsyncStatus status) {
             mapped = true;
             map_failed = status != wgpu::BufferMapAsyncStatus::Success;
         });
@@ -669,12 +762,10 @@ wgpu::Texture make_channel_texture(WebGpuContext& context, const ast::ImageChann
     wgpu::Texture texture = context.device.createTexture(descriptor);
 
     constexpr std::uint32_t bytes_per_row_alignment = 256;
-    const std::uint32_t unpadded_bytes_per_row =
-        static_cast<std::uint32_t>(channel.width) * 4U;
-    const std::uint32_t bytes_per_row =
-        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
-    std::vector<std::uint8_t> padded(
-        static_cast<std::size_t>(bytes_per_row) * static_cast<std::size_t>(channel.height));
+    const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(channel.width) * 4U;
+    const std::uint32_t bytes_per_row = align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    std::vector<std::uint8_t> padded(static_cast<std::size_t>(bytes_per_row) *
+                                     static_cast<std::size_t>(channel.height));
     const std::vector<std::uint32_t>& pixels = channel.pixel_data();
     for (int y = 0; y < channel.height; ++y) {
         std::uint8_t* dst = padded.data() + static_cast<std::size_t>(y) * bytes_per_row;
@@ -708,10 +799,9 @@ wgpu::Texture make_zero_render_texture(WebGpuContext& context, const Args& args)
     wgpu::Texture texture = make_render_texture(context, args);
     constexpr std::uint32_t bytes_per_row_alignment = 256;
     const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(args.width) * 4U;
-    const std::uint32_t bytes_per_row =
-        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
-    std::vector<std::uint8_t> zeroes(
-        static_cast<std::size_t>(bytes_per_row) * static_cast<std::size_t>(args.height));
+    const std::uint32_t bytes_per_row = align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    std::vector<std::uint8_t> zeroes(static_cast<std::size_t>(bytes_per_row) *
+                                     static_cast<std::size_t>(args.height));
     wgpu::ImageCopyTexture destination{};
     destination.texture = texture;
     wgpu::TextureDataLayout layout{};
@@ -804,7 +894,8 @@ bool dispatch_program(WebGpuContext& context, const ast::Program& program, const
 
     wgpu::ComputePipelineDescriptor pipeline_descriptor{};
     pipeline_descriptor.layout = pipeline_layout;
-    pipeline_descriptor.compute.module = make_shader_module(context.device, compiled.source.c_str());
+    pipeline_descriptor.compute.module =
+        make_shader_module(context.device, compiled.source.c_str());
     pipeline_descriptor.compute.entryPoint = "main";
     wgpu::ComputePipeline pipeline = context.device.createComputePipeline(pipeline_descriptor);
     if (pipeline == WGPUComputePipeline(nullptr)) {
@@ -848,8 +939,7 @@ std::vector<std::uint8_t> read_texture_rgba(WebGpuContext& context, wgpu::Textur
                                             const Args& args) {
     constexpr std::uint32_t bytes_per_row_alignment = 256;
     const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(args.width) * 4U;
-    const std::uint32_t bytes_per_row =
-        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    const std::uint32_t bytes_per_row = align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
     const std::uint64_t readback_size =
         static_cast<std::uint64_t>(bytes_per_row) * static_cast<std::uint64_t>(args.height);
     wgpu::BufferDescriptor readback_descriptor{};
@@ -869,8 +959,7 @@ std::vector<std::uint8_t> read_texture_rgba(WebGpuContext& context, wgpu::Textur
                                                static_cast<std::uint32_t>(args.height), 1));
     context.queue.submit(encoder.finish());
 
-    const std::vector<std::uint8_t> padded =
-        map_readback(context.device, readback, readback_size);
+    const std::vector<std::uint8_t> padded = map_readback(context.device, readback, readback_size);
     if (padded.size() != readback_size) {
         std::cerr << "WebGPU texture readback map failed\n";
         return {};
@@ -878,8 +967,7 @@ std::vector<std::uint8_t> read_texture_rgba(WebGpuContext& context, wgpu::Textur
 
     std::vector<std::uint8_t> rgba(static_cast<std::size_t>(args.width * args.height * 4));
     for (int y = 0; y < args.height; ++y) {
-        const std::uint8_t* src =
-            padded.data() + static_cast<std::size_t>(y) * bytes_per_row;
+        const std::uint8_t* src = padded.data() + static_cast<std::size_t>(y) * bytes_per_row;
         std::uint8_t* dst = rgba.data() + static_cast<std::size_t>(y * args.width) * 4U;
         std::memcpy(dst, src, static_cast<std::size_t>(unpadded_bytes_per_row));
     }
@@ -974,10 +1062,10 @@ Args args_for_frame(const Args& args, int offset) {
     return frame_args;
 }
 
-std::vector<std::uint8_t> render_cpu_pipeline(
-    const ast::Program& image_program,
-    const std::array<std::optional<ast::Program>, 4>& buffer_programs, const Args& args,
-    const ast::ChannelSet& base_channels) {
+std::vector<std::uint8_t>
+render_cpu_pipeline(const ast::Program& image_program,
+                    const std::array<std::optional<ast::Program>, 4>& buffer_programs,
+                    const Args& args, const ast::ChannelSet& base_channels) {
     std::array<std::vector<std::uint32_t>, 4> previous_buffers;
     std::array<std::vector<std::uint32_t>, 4> current_buffers;
     const std::size_t pixel_count = static_cast<std::size_t>(args.width * args.height);
@@ -1055,10 +1143,10 @@ std::vector<std::uint8_t> render_cpu_pipeline(
     return rgba;
 }
 
-std::vector<std::uint8_t> render_gpu_pipeline(
-    WebGpuContext& context, const ast::Program& image_program,
-    const std::array<std::optional<ast::Program>, 4>& buffer_programs, const Args& args,
-    const ast::ChannelSet& base_channels) {
+std::vector<std::uint8_t>
+render_gpu_pipeline(WebGpuContext& context, const ast::Program& image_program,
+                    const std::array<std::optional<ast::Program>, 4>& buffer_programs,
+                    const Args& args, const ast::ChannelSet& base_channels) {
     std::array<wgpu::Texture, 4> base_textures = make_base_channel_textures(context, base_channels);
     std::array<wgpu::TextureView, 4> base_views = make_views(base_textures);
 
@@ -1227,8 +1315,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto error_callback = context.device.setUncapturedErrorCallback(
-        [](wgpu::ErrorType type, char const* message) {
+    auto error_callback =
+        context.device.setUncapturedErrorCallback([](wgpu::ErrorType type, char const* message) {
             std::cerr << "WebGPU error " << static_cast<int>(type) << ": "
                       << (message != nullptr ? message : "<no message>") << '\n';
         });

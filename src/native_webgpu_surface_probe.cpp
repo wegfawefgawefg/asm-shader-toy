@@ -1,8 +1,10 @@
 #define WEBGPU_CPP_IMPLEMENTATION
+// clang-format off
 #include <webgpu/webgpu.hpp>
 
 #include <SDL.h>
 #include <SDL_syswm.h>
+// clang-format on
 
 #include <algorithm>
 #include <chrono>
@@ -203,9 +205,8 @@ bool render_surface_frames(WebGpuContext& context, wgpu::Surface surface, const 
 
         wgpu::Texture surface_texture_handle{surface_texture.texture};
         wgpu::TextureView view = surface_texture_handle.createView();
-        const float phase =
-            static_cast<float>(frame % std::max(1, args.frames)) /
-            static_cast<float>(std::max(1, args.frames));
+        const float phase = static_cast<float>(frame % std::max(1, args.frames)) /
+                            static_cast<float>(std::max(1, args.frames));
         wgpu::RenderPassColorAttachment attachment{};
         attachment.view = view;
         attachment.loadOp = wgpu::LoadOp::Clear;
@@ -244,10 +245,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SDL_Window* window =
-        SDL_CreateWindow("asm-shader-toy WebGPU surface probe", SDL_WINDOWPOS_CENTERED,
-                         SDL_WINDOWPOS_CENTERED, args.width * args.scale,
-                         args.height * args.scale, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow(
+        "asm-shader-toy WebGPU surface probe", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        args.width * args.scale, args.height * args.scale, SDL_WINDOW_SHOWN);
     if (window == nullptr) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << '\n';
         SDL_Quit();
@@ -261,8 +261,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto error_callback = context.device.setUncapturedErrorCallback(
-        [](wgpu::ErrorType type, char const* message) {
+    auto error_callback =
+        context.device.setUncapturedErrorCallback([](wgpu::ErrorType type, char const* message) {
             std::cerr << "WebGPU error " << static_cast<int>(type) << ": "
                       << (message != nullptr ? message : "<no message>") << '\n';
         });

@@ -47,6 +47,12 @@ headless renderer for deterministic single-image programs:
   --time 0.5 \
   --compare-cpu
 
+./build-webgpu-probe/ast-webgpu-frame examples/audio/audio_scope.asm \
+  --audio0 examples/assets/audio/two_tone.wav \
+  --size 64x32 \
+  --time 0.25 \
+  --compare-cpu
+
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ```
 
@@ -56,8 +62,9 @@ when `--output` is provided. Static image channels, generated noise channels,
 and feedback buffer passes are uploaded or rendered as `rgba8unorm` textures and
 use the same metadata uniforms as the CPU VM. Video file channels decode one
 deterministic frame at the requested shader time and upload it as a channel
-texture. Full SDL shader presentation, live webcam, and live microphone are
-still future native WebGPU work.
+texture. Audio file channels decode through ffmpeg and upload the same 512x2
+waveform/spectrum texture shape as the CPU runner. Full SDL shader presentation,
+live webcam, and live microphone are still future native WebGPU work.
 
 `ast-webgpu-surface-probe` is a narrower presentation smoke test. On Linux/X11,
 it opens an SDL window, creates a WebGPU surface from the native window handle,
