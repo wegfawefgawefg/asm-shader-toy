@@ -25,6 +25,7 @@ type AppState = {
 
 type LiveChannelSource = ChannelRuntimeSource & {
   audioContext?: AudioContext;
+  audioSource?: AudioBufferSourceNode;
   objectUrl?: string;
   stream?: MediaStream;
 };
@@ -236,6 +237,15 @@ function renderChannelControls(): void {
     micButton.dataset.action = "mic-channel";
     micButton.dataset.channel = String(index);
     micButton.textContent = "Mic";
+    const audioLabel = document.createElement("label");
+    audioLabel.className = "button channel-button";
+    audioLabel.textContent = "Aud";
+    const audioInput = document.createElement("input");
+    audioInput.className = "hidden-input";
+    audioInput.type = "file";
+    audioInput.accept = "audio/wav,audio/mpeg,audio/ogg,audio/flac,audio/mp4";
+    audioInput.dataset.audioChannel = String(index);
+    audioLabel.append(audioInput);
     const videoLabel = document.createElement("label");
     videoLabel.className = "button channel-button";
     videoLabel.textContent = "Vid";
@@ -245,7 +255,7 @@ function renderChannelControls(): void {
     videoInput.accept = "video/mp4,video/webm,video/ogg";
     videoInput.dataset.videoChannel = String(index);
     videoLabel.append(videoInput);
-    controls.append(seedInput, noiseButton, webcamButton, micButton, videoLabel);
+    controls.append(seedInput, noiseButton, webcamButton, micButton, audioLabel, videoLabel);
     const meta = document.createElement("div");
     meta.className = "channel-meta";
     if (channel.kind === "noise" || channel.seed) {
@@ -260,6 +270,10 @@ function renderChannelControls(): void {
         : "microphone disconnected";
     } else if (channel.kind === "video") {
       meta.textContent = channelSources.has(index) ? `${channel.width}x${channel.height} ${channel.name}` : "video disconnected";
+    } else if (channel.kind === "audio") {
+      meta.textContent = channelSources.has(index)
+        ? `${channel.width}x${channel.height} ${channel.name} ${channel.sampleRate ?? 0}hz`
+        : "audio disconnected";
     } else if (channel.imageDataUrl) {
       meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
     } else {
@@ -345,6 +359,7 @@ function stopChannelSource(index: number): void {
     return;
   }
   source.video?.pause();
+  source.audioSource?.stop();
   if (source.objectUrl) {
     URL.revokeObjectURL(source.objectUrl);
   }
@@ -446,6 +461,49 @@ async function setChannelMicrophone(index: number): Promise<void> {
   await compileWgsl();
 }
 
+async function setChannelAudio(index: number, file: File): Promise<void> {
+  stopChannelSource(index);
+  const audioContext = new AudioContext();
+  const audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+  const sourceNode = audioContext.createBufferSource();
+  const analyser = audioContext.createAnalyser();
+  const silentGain = audioContext.createGain();
+  silentGain.gain.value = 0;
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.35;
+  sourceNode.buffer = audioBuffer;
+  sourceNode.loop = true;
+  sourceNode.connect(analyser);
+  analyser.connect(silentGain);
+  silentGain.connect(audioContext.destination);
+  sourceNode.start();
+  const width = 512;
+  const height = 2;
+  channelSources.set(index, {
+    audioContext,
+    audioSource: sourceNode,
+    audio: {
+      analyser,
+      duration: audioBuffer.duration,
+      timeData: new Uint8Array(new ArrayBuffer(width)),
+      frequencyData: new Uint8Array(new ArrayBuffer(width)),
+      pixels: new Uint8Array(new ArrayBuffer(width * height * 4)),
+      startedAt: performance.now() / 1000,
+      width,
+      height
+    }
+  });
+  state.project.settings.channels[index] = {
+    kind: "audio",
+    name: file.name,
+    width,
+    height,
+    sampleRate: audioBuffer.sampleRate
+  };
+  renderChannelControls();
+  await compileWgsl();
+}
+
 async function setChannelVideo(index: number, file: File): Promise<void> {
   stopChannelSource(index);
   const objectUrl = URL.createObjectURL(file);
@@ -523,6 +581,10 @@ appRoot.addEventListener("input", (event) => {
   }
   if (target instanceof HTMLInputElement && target.dataset.videoChannel !== undefined && target.files?.[0]) {
     void setChannelVideo(Number(target.dataset.videoChannel), target.files[0]);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.audioChannel !== undefined && target.files?.[0]) {
+    void setChannelAudio(Number(target.dataset.audioChannel), target.files[0]);
     return;
   }
   if (target === asmEditor || target === wgslEditor) {

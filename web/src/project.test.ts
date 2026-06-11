@@ -121,4 +121,25 @@ describe("project bundles", () => {
       height: 360
     });
   });
+
+  test("preserves browser audio channel metadata without serializing media blobs", () => {
+    const project = normalizeProject({
+      files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [{ kind: "audio", name: "loop.wav", width: 512, height: 2, sampleRate: 44100 }]
+      }
+    });
+
+    expect(project.settings.channels[0]).toMatchObject({
+      kind: "audio",
+      name: "loop.wav",
+      width: 512,
+      height: 2,
+      sampleRate: 44100
+    });
+  });
 });

@@ -33,9 +33,11 @@ type BufferPassState = {
 export type ChannelRuntimeSource = {
   audio?: {
     analyser: AnalyserNode;
+    duration?: number;
     timeData: Uint8Array<ArrayBuffer>;
     frequencyData: Uint8Array<ArrayBuffer>;
     pixels: Uint8Array<ArrayBuffer>;
+    startedAt?: number;
     width: number;
     height: number;
   };
@@ -166,7 +168,11 @@ function writeUniforms(
     values[offset + 2] =
       metadata.kind === "video" && source?.video
         ? source.video.currentTime
-        : metadata.kind === "webcam" || metadata.kind === "microphone"
+        : metadata.kind === "audio" && source?.audio?.startedAt !== undefined
+          ? source.audio.duration
+            ? (now - source.audio.startedAt) % source.audio.duration
+            : now - source.audio.startedAt
+          : metadata.kind === "webcam" || metadata.kind === "microphone"
           ? now - start
           : 0;
     values[offset + 3] = metadata.sampleRate ?? 0;
