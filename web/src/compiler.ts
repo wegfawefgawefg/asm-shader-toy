@@ -212,6 +212,16 @@ const emittedOps = new Set([
   "jge",
   "call",
   "ret",
+  "tex",
+  "texel",
+  "chdim",
+  "chtime",
+  "chsrate",
+  "key",
+  "mbtn",
+  "mwheel",
+  "gbtn",
+  "gaxis",
   "out",
   "out8",
   "halt"
@@ -426,6 +436,57 @@ fn ast_mod(a: f32, b: f32) -> f32 { if (abs(b) <= 0.000001) { return 0.0; } retu
 fn ast_eq(a: f32, b: f32) -> bool { return abs(a - b) <= 0.000001; }
 fn ast_unorm(v: f32) -> f32 { return clamp(v, 0.0, 1.0); }
 fn ast_byte(v: f32) -> f32 { return clamp(v, 0.0, 255.0) / 255.0; }
+fn ast_channel_meta(channel: i32) -> vec4<f32> {
+    switch (channel) {
+    case 0: { return ast_inputs.channel0; }
+    case 1: { return ast_inputs.channel1; }
+    case 2: { return ast_inputs.channel2; }
+    case 3: { return ast_inputs.channel3; }
+    default: { return vec4<f32>(0.0); }
+    }
+}
+fn ast_channel_load(channel: i32, coord: vec2<i32>) -> vec4<f32> {
+    switch (channel) {
+    case 0: { return textureLoad(channel0_texture, coord, 0); }
+    case 1: { return textureLoad(channel1_texture, coord, 0); }
+    case 2: { return textureLoad(channel2_texture, coord, 0); }
+    case 3: { return textureLoad(channel3_texture, coord, 0); }
+    default: { return vec4<f32>(0.0); }
+    }
+}
+fn ast_packed_vec4_read(value: vec4<f32>, lane: i32) -> f32 {
+    switch (lane) {
+    case 0: { return value.x; }
+    case 1: { return value.y; }
+    case 2: { return value.z; }
+    case 3: { return value.w; }
+    default: { return 0.0; }
+    }
+}
+fn ast_key_state(scancode: i32) -> f32 {
+    if (scancode < 0 || scancode >= 512) { return 0.0; }
+    let bucket = scancode / 4;
+    let lane = scancode - bucket * 4;
+    return ast_packed_vec4_read(ast_inputs.keys[bucket], lane);
+}
+fn ast_mouse_button_state(button: i32) -> f32 {
+    if (button < 0 || button >= 8) { return 0.0; }
+    let bucket = button / 4;
+    let lane = button - bucket * 4;
+    return ast_packed_vec4_read(ast_inputs.mouse_buttons[bucket], lane);
+}
+fn ast_gamepad_button_state(button: i32) -> f32 {
+    if (button < 0 || button >= 32) { return 0.0; }
+    let bucket = button / 4;
+    let lane = button - bucket * 4;
+    return ast_packed_vec4_read(ast_inputs.gamepad_buttons[bucket], lane);
+}
+fn ast_gamepad_axis_state(axis: i32) -> f32 {
+    if (axis < 0 || axis >= 16) { return 0.0; }
+    let bucket = axis / 4;
+    let lane = axis - bucket * 4;
+    return ast_packed_vec4_read(ast_inputs.gamepad_axes[bucket], lane);
+}
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -514,6 +575,61 @@ function emitInstruction(instruction: Instruction, pc: number, programSize: numb
       return `${line}            if (call_depth >= 32) { pc = -1; } else { call_stack[call_depth] = ${next}; call_depth = call_depth + 1; pc = ${target(o[0])}; }\n`;
     case "ret":
       return `${line}            if (call_depth > 0) { call_depth = call_depth - 1; pc = call_stack[call_depth]; } else { pc = ${programSize}; }\n`;
+    case "tex":
+      return `${line}            let tex_channel_${pc} = i32(${readOperand(o[4])});
+            let tex_meta_${pc} = ast_channel_meta(tex_channel_${pc});
+            if (tex_meta_${pc}.x <= 0.0 || tex_meta_${pc}.y <= 0.0) {
+                ${writeRegister(o[0], "0.0")} ${writeRegister(o[1], "0.0")} ${writeRegister(o[2], "0.0")} ${writeRegister(o[3], "0.0")}
+            } else {
+                let tex_w_${pc} = i32(tex_meta_${pc}.x);
+                let tex_h_${pc} = i32(tex_meta_${pc}.y);
+                let tex_x_${pc} = clamp(i32(floor(clamp(${readOperand(o[5])}, 0.0, 1.0) * tex_meta_${pc}.x)), 0, tex_w_${pc} - 1);
+                let tex_y_${pc} = clamp(i32(floor(clamp(${readOperand(o[6])}, 0.0, 1.0) * tex_meta_${pc}.y)), 0, tex_h_${pc} - 1);
+                let tex_sample_${pc} = ast_channel_load(tex_channel_${pc}, vec2<i32>(tex_x_${pc}, tex_y_${pc}));
+                ${writeRegister(o[0], `tex_sample_${pc}.r`)} ${writeRegister(o[1], `tex_sample_${pc}.g`)} ${writeRegister(o[2], `tex_sample_${pc}.b`)} ${writeRegister(o[3], `tex_sample_${pc}.a`)}
+            }
+            pc = ${next};\n`;
+    case "texel":
+      return `${line}            let texel_channel_${pc} = i32(${readOperand(o[4])});
+            let texel_meta_${pc} = ast_channel_meta(texel_channel_${pc});
+            let texel_x_${pc} = i32(round(${readOperand(o[5])}));
+            let texel_y_${pc} = i32(round(${readOperand(o[6])}));
+            if (texel_meta_${pc}.x <= 0.0 || texel_meta_${pc}.y <= 0.0 || texel_x_${pc} < 0 || texel_y_${pc} < 0 || texel_x_${pc} >= i32(texel_meta_${pc}.x) || texel_y_${pc} >= i32(texel_meta_${pc}.y)) {
+                ${writeRegister(o[0], "0.0")} ${writeRegister(o[1], "0.0")} ${writeRegister(o[2], "0.0")} ${writeRegister(o[3], "0.0")}
+            } else {
+                let texel_sample_${pc} = ast_channel_load(texel_channel_${pc}, vec2<i32>(texel_x_${pc}, texel_y_${pc}));
+                ${writeRegister(o[0], `texel_sample_${pc}.r`)} ${writeRegister(o[1], `texel_sample_${pc}.g`)} ${writeRegister(o[2], `texel_sample_${pc}.b`)} ${writeRegister(o[3], `texel_sample_${pc}.a`)}
+            }
+            pc = ${next};\n`;
+    case "chdim":
+      return `${line}            let chdim_meta_${pc} = ast_channel_meta(i32(${readOperand(o[2])}));
+            ${writeRegister(o[0], `chdim_meta_${pc}.x`)}
+            ${writeRegister(o[1], `chdim_meta_${pc}.y`)}
+            pc = ${next};\n`;
+    case "chtime":
+      return `${line}            let chtime_meta_${pc} = ast_channel_meta(i32(${readOperand(o[1])}));
+            ${writeRegister(o[0], `chtime_meta_${pc}.z`)}
+            pc = ${next};\n`;
+    case "chsrate":
+      return `${line}            let chsrate_meta_${pc} = ast_channel_meta(i32(${readOperand(o[1])}));
+            ${writeRegister(o[0], `chsrate_meta_${pc}.w`)}
+            pc = ${next};\n`;
+    case "key":
+      return `${line}            ${writeRegister(o[0], `ast_key_state(i32(${readOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "mbtn":
+      return `${line}            ${writeRegister(o[0], `ast_mouse_button_state(i32(${readOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "mwheel":
+      return `${line}            ${writeRegister(o[0], "ast_inputs.mouse_wheel.x")}
+            ${writeRegister(o[1], "ast_inputs.mouse_wheel.y")}
+            pc = ${next};\n`;
+    case "gbtn":
+      return `${line}            ${writeRegister(o[0], `ast_gamepad_button_state(i32(${readOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "gaxis":
+      return `${line}            ${writeRegister(o[0], `ast_gamepad_axis_state(i32(${readOperand(o[1])}))`)}
+            pc = ${next};\n`;
     case "out":
       return `${line}            color = vec4<f32>(ast_unorm(${readOperand(o[0])}), ast_unorm(${readOperand(o[1])}), ast_unorm(${readOperand(o[2])}), ast_unorm(${readOperand(o[3])}));\n            pc = ${next};\n`;
     case "out8":

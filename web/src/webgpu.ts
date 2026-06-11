@@ -89,11 +89,13 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
 }
 
 function makeFallbackTexture(device: GPUDevice): GPUTexture {
-  return device.createTexture({
+  const texture = device.createTexture({
     size: { width: 1, height: 1 },
     format: "rgba8unorm",
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
   });
+  device.queue.writeTexture({ texture }, new Uint8Array([255, 255, 255, 255]), {}, { width: 1, height: 1 });
+  return texture;
 }
 
 function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSettings, frame: number, start: number): void {
@@ -106,6 +108,11 @@ function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSe
   values[3] = size.width;
   values[4] = size.height;
   values[13] = 1;
+  for (let channel = 0; channel < 4; ++channel) {
+    const offset = 14 + channel * 4;
+    values[offset] = 1;
+    values[offset + 1] = 1;
+  }
   device.queue.writeBuffer(buffer, 0, values);
 }
 

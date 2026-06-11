@@ -80,8 +80,10 @@ npm run dev
 ```
 
 The browser compiler currently covers includes, aliases, labels, branches,
-calls, arithmetic, and color output. For texture/media/buffer examples, use the
-native CLI to emit WGSL, then paste it into the WGSL panel:
+calls, arithmetic, texture/channel metadata ops, live input query ops, and color
+output. Channel upload controls and feedback buffers are still pending. For
+examples outside the browser compiler subset, use the native CLI to emit WGSL,
+then paste it into the WGSL panel:
 
 ```sh
 ./build/asm-shader-toy examples/basics/time_pulse.asm --emit-wgsl -

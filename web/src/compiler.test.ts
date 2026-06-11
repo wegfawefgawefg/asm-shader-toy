@@ -46,19 +46,49 @@ ret
     expect(result.wgsl).toContain("pc = call_stack[call_depth]");
   });
 
-  test("reports unsupported texture ops for this prototype", () => {
+  test("compiles texture and channel metadata ops", () => {
     const result = compileAsmToWgsl(
       [
         {
           path: "main.asm",
-          content: "tex r16, r17, r18, r19, 0, 0.5, 0.5\n"
+          content: `tex r16, r17, r18, r19, 0, 0.5, 0.5
+texel r20, r21, r22, r23, 1, 4, 5
+chdim r24, r25, 0
+chtime r26, 0
+chsrate r27, 0
+out r16, r21, r26, r19
+`
         }
       ],
       "main.asm"
     );
 
-    expect(result.diagnostics.map((diagnostic) => diagnostic.message)).toContain(
-      "opcode 'tex' is not supported by the browser compiler yet"
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_channel_load");
+    expect(result.wgsl).toContain("textureLoad(channel0_texture");
+    expect(result.wgsl).toContain("chdim_meta");
+  });
+
+  test("compiles live input query ops", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `key r16, 4
+mbtn r17, 1
+mwheel r18, r19
+gbtn r20, 0
+gaxis r21, 2
+out8 r16, r17, r18, r19
+`
+        }
+      ],
+      "main.asm"
     );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_key_state");
+    expect(result.wgsl).toContain("ast_mouse_button_state");
+    expect(result.wgsl).toContain("ast_gamepad_axis_state");
   });
 });

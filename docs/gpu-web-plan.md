@@ -41,9 +41,9 @@ is an accelerating backend for programs that fit the validated subset.
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
   compilation exists for a prototype core subset covering includes, aliases,
-  labels, branches, calls, arithmetic, and output. Browser texture/media
-  channels, feedback buffers, and native WebGPU execution are still
-  unimplemented.
+  labels, branches, calls, arithmetic, texture/channel metadata ops, live input
+  query ops, and output. Browser texture/media upload controls, feedback
+  buffers, and native WebGPU execution are still unimplemented.
 
 ## Why WGSL First
 
