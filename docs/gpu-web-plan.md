@@ -43,10 +43,11 @@ is an accelerating backend for programs that fit the validated subset.
   `.const`, `.consts`, labels, branches, calls, arithmetic, texture/channel
   metadata ops, live input query ops, and output. Browser channel controls can
   bind static images, generated noise textures, or mirrored webcam streams to
-  `channel0..3`, and can upload live microphone analyser data as a 512x2 audio
-  texture, and can use user-selected video files as looping channel textures.
-  Browser feedback buffers can be assigned from project files and are rendered
-  with ping-pong textures before the final image pass.
+  `channel0..3`, upload live microphone analyser data as a 512x2 audio texture,
+  and use user-selected video files as looping channel textures. Browser
+  feedback buffers can be assigned from project files and are rendered with
+  ping-pong textures before the final image pass. The browser preview supports
+  pause, reset, FPS display, and PNG frame export.
   Image/noise channels are preserved in project bundles; webcam, microphone, and
   video channels preserve metadata and reconnect through browser permission or
   file selection. Audio-file channels and native WebGPU execution are still

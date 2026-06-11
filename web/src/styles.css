@@ -208,6 +208,12 @@ textarea {
   padding: 0 8px;
 }
 
+.toolbar output {
+  min-width: 70px;
+  color: #aab2bd;
+  font-variant-numeric: tabular-nums;
+}
+
 .split {
   display: grid;
   grid-template-columns: 1fr 1fr;

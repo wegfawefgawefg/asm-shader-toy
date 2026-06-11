@@ -18,6 +18,9 @@ type AppState = {
   running: boolean;
   frame: number;
   startSeconds: number;
+  fps: number;
+  fpsFrames: number;
+  fpsStart: number;
 };
 
 type LiveChannelSource = ChannelRuntimeSource & {
@@ -40,7 +43,10 @@ async function main(): Promise<void> {
     selectedFile: "main.asm",
     running: true,
     frame: 0,
-    startSeconds: performance.now() / 1000
+    startSeconds: performance.now() / 1000,
+    fps: 0,
+    fpsFrames: 0,
+    fpsStart: performance.now() / 1000
   };
   const channelSources = new Map<number, LiveChannelSource>();
 
@@ -73,6 +79,9 @@ appRoot.innerHTML = `
         <button class="button primary" data-action="compile-asm">Compile ASM</button>
         <button class="button" data-action="run">Run WGSL</button>
         <button class="button" data-action="pause">Pause</button>
+        <button class="button" data-action="reset">Reset</button>
+        <button class="button" data-action="save-frame">Save Frame</button>
+        <output data-fps>0 fps</output>
       </div>
       <div class="split">
         <section class="source-panel">
@@ -101,6 +110,7 @@ const asmEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-asm]")!;
 const wgslEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
+const fpsText = appRoot.querySelector<HTMLOutputElement>("[data-fps]")!;
 const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
 const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
@@ -284,6 +294,33 @@ async function compileWgsl(): Promise<void> {
   }
 }
 
+async function resetProgram(): Promise<void> {
+  state.frame = 0;
+  state.startSeconds = performance.now() / 1000;
+  state.fps = 0;
+  state.fpsFrames = 0;
+  state.fpsStart = state.startSeconds;
+  destroyProgram(program);
+  program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
+  fpsText.textContent = "0 fps";
+  statusText.textContent = "Reset";
+}
+
+function saveFrame(): void {
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      statusText.textContent = "Save frame failed";
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `asm-shader-toy-frame-${state.frame}.png`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    statusText.textContent = "Saved frame";
+  }, "image/png");
+}
+
 async function dataUrlForFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -465,6 +502,15 @@ function tick(): void {
   if (state.running && program) {
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources);
     state.frame += 1;
+    state.fpsFrames += 1;
+    const now = performance.now() / 1000;
+    const elapsed = now - state.fpsStart;
+    if (elapsed >= 0.5) {
+      state.fps = state.fpsFrames / elapsed;
+      state.fpsFrames = 0;
+      state.fpsStart = now;
+      fpsText.textContent = `${state.fps.toFixed(1)} fps`;
+    }
   }
   requestAnimationFrame(tick);
 }
@@ -514,6 +560,15 @@ appRoot.addEventListener("click", (event) => {
   if (action === "pause") {
     state.running = !state.running;
     (event.target as HTMLButtonElement).textContent = state.running ? "Pause" : "Play";
+  }
+  if (action === "reset") {
+    void resetProgram().catch((error) => {
+      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      statusText.textContent = "Reset failed";
+    });
+  }
+  if (action === "save-frame") {
+    saveFrame();
   }
   if (action === "add-file") {
     saveCurrentFile();

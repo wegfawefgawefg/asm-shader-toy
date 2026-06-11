@@ -70,7 +70,8 @@ program keeps running.
 The `web/` app is the first WebGPU/browser slice. It has a multi-file project
 editor, prototype asm-to-WGSL compilation for the core language subset, a WGSL
 editor, import/export JSON, compressed share URLs, and a WebGPU preview canvas
-with nearest-neighbor scaling.
+with nearest-neighbor scaling. The preview has pause, reset, FPS display, and
+PNG frame export controls.
 
 Run it locally:
 
