@@ -60,6 +60,9 @@ Build the optional native WebGPU probe:
 ./build-webgpu-probe/ast-webgpu-probe
 ```
 
+The probe requests a native WebGPU adapter/device, dispatches a tiny compute
+shader, reads a buffer back to CPU memory, and verifies the result.
+
 ## Run
 
 Default demo:

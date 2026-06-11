@@ -40,9 +40,10 @@ is an accelerating backend for programs that fit the validated subset.
   `image.wgsl`, any `bufferN.wgsl` feedback pass shaders, and a small manifest
   without initializing SDL/media.
 - An optional `AST_BUILD_NATIVE_WEBGPU=ON` CMake path now fetches a pinned
-  WebGPU-distribution/wgpu-native backend and builds `ast-webgpu-probe`, proving
-  native WebGPU headers, linking, and runtime library copying work on supported
-  hosts.
+  WebGPU-distribution/wgpu-native backend and builds `ast-webgpu-probe`, which
+  requests a native adapter/device, dispatches a small compute shader, reads a
+  buffer back to CPU memory, and verifies native WebGPU execution works on
+  supported hosts.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
   falling back. Native WebGPU rendering is still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
