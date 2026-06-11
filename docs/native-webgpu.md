@@ -30,6 +30,12 @@ optionally compares the result with the CPU VM, and writes a binary PPM frame
 when `--output` is provided. SDL presentation, loaded media channels, and
 feedback buffers are still future native WebGPU work.
 
+Run the repeatable native GPU parity gate:
+
+```sh
+./scripts/validate_webgpu_frame.sh
+```
+
 The current default uses:
 
 - `AST_WEBGPU_DISTRIBUTION_TAG=main-v0.2.0`

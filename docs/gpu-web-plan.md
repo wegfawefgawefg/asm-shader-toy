@@ -47,7 +47,8 @@ is an accelerating backend for programs that fit the validated subset.
   supported hosts. The optional build also creates `ast-webgpu-frame`, an
   experimental headless renderer that runs one deterministic asm image pass on
   native WebGPU, can write a PPM frame, and can compare GPU readback against the
-  CPU VM.
+  CPU VM. `scripts/validate_webgpu_frame.sh` runs a small CPU-vs-GPU parity
+  suite for supported deterministic examples.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
   falling back. Native WebGPU SDL presentation, media channels, and feedback
   buffers are still unimplemented.

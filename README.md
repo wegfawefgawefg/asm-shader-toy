@@ -62,6 +62,7 @@ Build the optional native WebGPU tools:
   --size gba \
   --compare-cpu \
   --output /tmp/asm-shader-toy-gpu.ppm
+./scripts/validate_webgpu_frame.sh
 ```
 
 The probe requests a native WebGPU adapter/device, dispatches a tiny handwritten
