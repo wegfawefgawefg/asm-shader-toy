@@ -183,8 +183,17 @@ if(AST_BUILD_NATIVE_WEBGPU)
     target_compile_features(ast-webgpu-frame PRIVATE cxx_std_20)
     ast_apply_warnings(ast-webgpu-frame)
 
+    add_executable(ast-webgpu-surface-probe src/native_webgpu_surface_probe.cpp)
+    target_link_libraries(ast-webgpu-surface-probe PRIVATE
+        webgpu
+        ${AST_WEBGPU_SDL2_TARGET}
+    )
+    target_compile_features(ast-webgpu-surface-probe PRIVATE cxx_std_20)
+    ast_apply_warnings(ast-webgpu-surface-probe)
+
     if(COMMAND target_copy_webgpu_binaries)
         target_copy_webgpu_binaries(ast-webgpu-probe)
         target_copy_webgpu_binaries(ast-webgpu-frame)
+        target_copy_webgpu_binaries(ast-webgpu-surface-probe)
     endif()
 endif()

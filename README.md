@@ -81,6 +81,7 @@ Build the optional native WebGPU tools:
   --size 160x90 \
   --time 0.5 \
   --compare-cpu
+./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ./scripts/validate_webgpu_frame.sh
 ```
 
@@ -90,6 +91,8 @@ storage texture and verifies CPU readback pixels. The frame tool renders one
 deterministic asm image pass through emitted WGSL and can compare the GPU
 readback with the CPU VM, including static image, generated noise, and feedback
 buffer channels. It can also sample a deterministic frame from video channels.
+The surface probe opens an SDL window, creates a native WebGPU surface, clears
+it, and presents frames.
 
 ## Run
 

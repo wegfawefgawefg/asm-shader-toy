@@ -46,6 +46,8 @@ headless renderer for deterministic single-image programs:
   --size 160x90 \
   --time 0.5 \
   --compare-cpu
+
+./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ```
 
 It dispatches emitted asm WGSL, copies the storage texture back to CPU memory,
@@ -54,8 +56,13 @@ when `--output` is provided. Static image channels, generated noise channels,
 and feedback buffer passes are uploaded or rendered as `rgba8unorm` textures and
 use the same metadata uniforms as the CPU VM. Video file channels decode one
 deterministic frame at the requested shader time and upload it as a channel
-texture. SDL presentation, live webcam, and live microphone are still future
-native WebGPU work.
+texture. Full SDL shader presentation, live webcam, and live microphone are
+still future native WebGPU work.
+
+`ast-webgpu-surface-probe` is a narrower presentation smoke test. On Linux/X11,
+it opens an SDL window, creates a WebGPU surface from the native window handle,
+configures the surface, clears it for a few frames, and presents. It does not
+yet render emitted asm WGSL to the window.
 
 Run the repeatable native GPU parity gate:
 

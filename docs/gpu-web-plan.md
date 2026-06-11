@@ -52,9 +52,12 @@ is an accelerating backend for programs that fit the validated subset.
   `scripts/validate_webgpu_frame.sh` runs a small CPU-vs-GPU parity suite for
   supported deterministic examples, including one-image, two-image, and noise
   texture programs plus deterministic feedback-buffer and video texel programs.
+- `ast-webgpu-surface-probe` opens an SDL window on Linux/X11, creates a native
+  WebGPU surface, clears it, and presents frames. This proves the surface path
+  but is not yet the full shader-presenting runner.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU SDL presentation and live webcam/microphone media
-  channels are still unimplemented.
+  falling back. Native WebGPU shader presentation through SDL and live
+  webcam/microphone media channels are still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
@@ -158,7 +161,10 @@ is an accelerating backend for programs that fit the validated subset.
 ## Website Parity Target
 
 The website should aim for the native runner's utility surface, not a separate
-mini-language.
+mini-language or a reduced demo. It should preserve the same project model,
+standard include behavior, shader inputs, channel types, feedback buffers,
+runtime controls, and sharing/import/export utilities wherever browser APIs make
+that possible.
 
 Language features to support:
 
