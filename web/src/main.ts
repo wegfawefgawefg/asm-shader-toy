@@ -43,6 +43,7 @@ type AppState = {
   fps: number;
   fpsFrames: number;
   fpsStart: number;
+  lastRenderSeconds: number;
 };
 
 type LiveChannelSource = ChannelRuntimeSource & {
@@ -57,6 +58,7 @@ if (!app) {
   throw new Error("missing app root");
 }
 const appRoot: HTMLDivElement = app;
+const browserFrameIntervalSeconds = 1 / 60;
 
 void main().catch((error) => {
   appRoot.textContent = error instanceof Error ? error.message : String(error);
@@ -75,7 +77,8 @@ async function main(): Promise<void> {
     startSeconds: performance.now() / 1000,
     fps: 0,
     fpsFrames: 0,
-    fpsStart: performance.now() / 1000
+    fpsStart: performance.now() / 1000,
+    lastRenderSeconds: 0
   };
   const channelSources = new Map<number, LiveChannelSource>();
   const inputState: BrowserInputState = {
@@ -610,6 +613,7 @@ async function resetProgram(): Promise<void> {
   state.fps = 0;
   state.fpsFrames = 0;
   state.fpsStart = state.startSeconds;
+  state.lastRenderSeconds = 0;
   await replaceProgram("Reset");
   fpsText.textContent = "0 fps";
 }
@@ -992,7 +996,13 @@ function currentSizeKey(): string {
 }
 
 function tick(): void {
+  const tickSeconds = performance.now() / 1000;
+  if (state.running && tickSeconds - state.lastRenderSeconds < browserFrameIntervalSeconds) {
+    requestAnimationFrame(tick);
+    return;
+  }
   if (state.running && gpuContext && program && program.sizeKey === currentSizeKey()) {
+    state.lastRenderSeconds = tickSeconds;
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources, inputState);
     inputState.mouseWheelX = 0;
     inputState.mouseWheelY = 0;
@@ -1003,7 +1013,7 @@ function tick(): void {
     }
     state.frame += 1;
     state.fpsFrames += 1;
-    const now = performance.now() / 1000;
+    const now = tickSeconds;
     const elapsed = now - state.fpsStart;
     if (elapsed >= 0.5) {
       state.fps = state.fpsFrames / elapsed;
@@ -1012,6 +1022,7 @@ function tick(): void {
       fpsText.textContent = `${state.fps.toFixed(1)} fps`;
     }
   } else if (state.running && glContext && glProgram && glProgram.sizeKey === currentSizeKey()) {
+    state.lastRenderSeconds = tickSeconds;
     renderGlFrame(glContext, glProgram, state.project.settings, state.frame, state.startSeconds, channelSources, inputState);
     inputState.mouseWheelX = 0;
     inputState.mouseWheelY = 0;
@@ -1022,7 +1033,7 @@ function tick(): void {
     }
     state.frame += 1;
     state.fpsFrames += 1;
-    const now = performance.now() / 1000;
+    const now = tickSeconds;
     const elapsed = now - state.fpsStart;
     if (elapsed >= 0.5) {
       state.fps = state.fpsFrames / elapsed;
@@ -1046,6 +1057,7 @@ async function loadTemplate(templateId: string): Promise<void> {
   state.project = makeTemplateProject(template);
   state.selectedFile = state.project.settings.main;
   state.frame = 0;
+  state.lastRenderSeconds = 0;
   state.startSeconds = performance.now() / 1000;
   await restoreProjectRuntimeSources();
   renderProjectUi();
