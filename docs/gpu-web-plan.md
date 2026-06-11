@@ -39,8 +39,12 @@ is an accelerating backend for programs that fit the validated subset.
 - The native CLI also exposes `--emit-wgsl-bundle dir`, which writes
   `image.wgsl`, any `bufferN.wgsl` feedback pass shaders, and a small manifest
   without initializing SDL/media.
+- An optional `AST_BUILD_NATIVE_WEBGPU=ON` CMake path now fetches a pinned
+  WebGPU-distribution/wgpu-native backend and builds `ast-webgpu-probe`, proving
+  native WebGPU headers, linking, and runtime library copying work on supported
+  hosts.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU execution is still unimplemented.
+  falling back. Native WebGPU rendering is still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm

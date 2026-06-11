@@ -53,6 +53,13 @@ npm install
 npm run build
 ```
 
+Build the optional native WebGPU probe:
+
+```sh
+./scripts/build_webgpu_probe.sh
+./build-webgpu-probe/ast-webgpu-probe
+```
+
 ## Run
 
 Default demo:

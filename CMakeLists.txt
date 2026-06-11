@@ -6,6 +6,13 @@ option(AST_STRICT "Enable strict compiler warnings" ON)
 option(AST_WARN_AS_ERROR "Treat warnings as errors" OFF)
 option(AST_BUILD_APP "Build SDL runner" ON)
 option(AST_BUILD_TESTS "Build test programs" ON)
+option(AST_BUILD_NATIVE_WEBGPU "Build experimental native WebGPU integration targets" OFF)
+
+set(AST_WEBGPU_DISTRIBUTION_TAG "main-v0.2.0" CACHE STRING
+    "Pinned eliemichel/WebGPU-distribution tag used when AST_BUILD_NATIVE_WEBGPU is ON")
+set(AST_WEBGPU_BACKEND "WGPU" CACHE STRING
+    "WebGPU backend used by WebGPU-distribution when AST_BUILD_NATIVE_WEBGPU is ON")
+set_property(CACHE AST_WEBGPU_BACKEND PROPERTY STRINGS WGPU WGPU_STATIC DAWN)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -109,4 +116,28 @@ if(AST_BUILD_TESTS)
     ast_apply_warnings(ast_core_tests)
 
     add_test(NAME ast_core_tests COMMAND ast_core_tests)
+endif()
+
+if(AST_BUILD_NATIVE_WEBGPU)
+    include(FetchContent)
+
+    set(WEBGPU_BACKEND "${AST_WEBGPU_BACKEND}" CACHE STRING "WebGPU-distribution backend" FORCE)
+    set(WEBGPU_BUILD_FROM_SOURCE OFF CACHE BOOL "Use prebuilt WebGPU implementation when available" FORCE)
+    set(WEBGPU_LINK_TYPE SHARED CACHE STRING "WebGPU implementation link type" FORCE)
+
+    FetchContent_Declare(
+        ast_webgpu_distribution
+        URL "https://github.com/eliemichel/WebGPU-distribution/archive/refs/tags/${AST_WEBGPU_DISTRIBUTION_TAG}.zip"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    FetchContent_MakeAvailable(ast_webgpu_distribution)
+
+    add_executable(ast-webgpu-probe src/native_webgpu_probe.cpp)
+    target_link_libraries(ast-webgpu-probe PRIVATE webgpu)
+    target_compile_features(ast-webgpu-probe PRIVATE cxx_std_20)
+    ast_apply_warnings(ast-webgpu-probe)
+
+    if(COMMAND target_copy_webgpu_binaries)
+        target_copy_webgpu_binaries(ast-webgpu-probe)
+    endif()
 endif()
