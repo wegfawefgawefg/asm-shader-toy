@@ -79,9 +79,9 @@ cd web
 npm run dev
 ```
 
-The browser compiler currently covers includes, aliases, labels, branches,
-calls, arithmetic, texture/channel metadata ops, live input query ops, and color
-output. Channel upload controls and feedback buffers are still pending. For
+The browser compiler currently covers includes, aliases, `.const`, `.consts`,
+labels, branches, calls, arithmetic, texture/channel metadata ops, live input
+query ops, and color output. Channel upload controls and feedback buffers are still pending. For
 examples outside the browser compiler subset, use the native CLI to emit WGSL,
 then paste it into the WGSL panel:
 

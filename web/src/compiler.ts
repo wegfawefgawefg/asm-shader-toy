@@ -227,6 +227,39 @@ const emittedOps = new Set([
   "halt"
 ]);
 
+const constAllowedOps = new Set([
+  "mov",
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "sin",
+  "cos",
+  "sqrt",
+  "abs",
+  "floor",
+  "fract",
+  "min",
+  "max",
+  "mod",
+  "norm",
+  "lt",
+  "gt",
+  "eq",
+  "jmp",
+  "jnz",
+  "jz",
+  "jeq",
+  "jne",
+  "jlt",
+  "jle",
+  "jgt",
+  "jge",
+  "call",
+  "ret",
+  "halt"
+]);
+
 function addDiagnostic(diagnostics: CompileDiagnostic[], file: string, line: number, message: string): void {
   diagnostics.push({ file, line, message });
 }
@@ -254,10 +287,214 @@ function normalizePath(base: string, includePath: string): string {
   return includePath;
 }
 
+function safeDiv(a: number, b: number): number {
+  return Math.abs(b) <= 0.000001 ? 0 : a / b;
+}
+
+function executeConstBlock(
+  block: RawInstruction[],
+  labels: Map<string, number>,
+  constants: Map<string, number>,
+  diagnostics: CompileDiagnostic[]
+): void {
+  const slots = new Map<string, number>();
+  const slotNames: string[] = [];
+  const values: number[] = [];
+  const assigned: boolean[] = [];
+
+  const slotFor = (name: string): number => {
+    const existing = slots.get(name);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const index = slotNames.length;
+    slots.set(name, index);
+    slotNames.push(name);
+    values.push(constants.get(name) ?? 0);
+    assigned.push(false);
+    return index;
+  };
+
+  for (const raw of block) {
+    const destinations = destinationOperands.get(raw.op) ?? [];
+    for (const index of destinations) {
+      const token = raw.args[index];
+      if (token && !Number.isFinite(Number(token)) && !/^r\d+$/.test(token) && !builtinAliases.has(token)) {
+        slotFor(token);
+      }
+    }
+  }
+
+  const valueOf = (raw: RawInstruction, token: string): number => {
+    const slot = slots.get(token);
+    if (slot !== undefined) {
+      return values[slot];
+    }
+    const constant = constants.get(token);
+    if (constant !== undefined) {
+      return constant;
+    }
+    const value = Number(token);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+    addDiagnostic(diagnostics, raw.file, raw.line, `invalid const operand: ${token}`);
+    return 0;
+  };
+
+  const writeSlot = (raw: RawInstruction, token: string, value: number): void => {
+    if (Number.isFinite(Number(token)) || /^r\d+$/.test(token) || builtinAliases.has(token)) {
+      addDiagnostic(diagnostics, raw.file, raw.line, `const destination must be a name: ${token}`);
+      return;
+    }
+    const slot = slotFor(token);
+    values[slot] = value;
+    assigned[slot] = true;
+  };
+
+  let pc = 0;
+  let steps = 0;
+  const callStack: number[] = [];
+  while (pc >= 0 && pc < block.length) {
+    if (steps >= 4096) {
+      addDiagnostic(diagnostics, block[0]?.file ?? "", block[0]?.line ?? 0, ".consts exceeded max steps");
+      return;
+    }
+    steps += 1;
+    const raw = block[pc];
+    pc += 1;
+    const a = (index: number) => valueOf(raw, raw.args[index]);
+    const jump = (index: number): void => {
+      const target = labels.get(raw.args[index]);
+      if (target === undefined) {
+        addDiagnostic(diagnostics, raw.file, raw.line, `unknown label: ${raw.args[index]}`);
+        pc = block.length;
+      } else {
+        pc = target;
+      }
+    };
+
+    switch (raw.op) {
+      case "mov":
+        writeSlot(raw, raw.args[0], a(1));
+        break;
+      case "add":
+        writeSlot(raw, raw.args[0], a(1) + a(2));
+        break;
+      case "sub":
+        writeSlot(raw, raw.args[0], a(1) - a(2));
+        break;
+      case "mul":
+        writeSlot(raw, raw.args[0], a(1) * a(2));
+        break;
+      case "div":
+      case "norm":
+        writeSlot(raw, raw.args[0], safeDiv(a(1), a(2)));
+        break;
+      case "sin":
+        writeSlot(raw, raw.args[0], Math.sin(a(1)));
+        break;
+      case "cos":
+        writeSlot(raw, raw.args[0], Math.cos(a(1)));
+        break;
+      case "sqrt":
+        writeSlot(raw, raw.args[0], Math.sqrt(Math.max(0, a(1))));
+        break;
+      case "abs":
+        writeSlot(raw, raw.args[0], Math.abs(a(1)));
+        break;
+      case "floor":
+        writeSlot(raw, raw.args[0], Math.floor(a(1)));
+        break;
+      case "fract":
+        writeSlot(raw, raw.args[0], a(1) - Math.floor(a(1)));
+        break;
+      case "min":
+        writeSlot(raw, raw.args[0], Math.min(a(1), a(2)));
+        break;
+      case "max":
+        writeSlot(raw, raw.args[0], Math.max(a(1), a(2)));
+        break;
+      case "mod":
+        writeSlot(raw, raw.args[0], a(1) % a(2));
+        break;
+      case "lt":
+        writeSlot(raw, raw.args[0], a(1) < a(2) ? 1 : 0);
+        break;
+      case "gt":
+        writeSlot(raw, raw.args[0], a(1) > a(2) ? 1 : 0);
+        break;
+      case "eq":
+        writeSlot(raw, raw.args[0], Math.abs(a(1) - a(2)) <= 0.000001 ? 1 : 0);
+        break;
+      case "jmp":
+        jump(0);
+        break;
+      case "jnz":
+        if (a(0) !== 0) jump(1);
+        break;
+      case "jz":
+        if (a(0) === 0) jump(1);
+        break;
+      case "jeq":
+        if (Math.abs(a(0) - a(1)) <= 0.000001) jump(2);
+        break;
+      case "jne":
+        if (Math.abs(a(0) - a(1)) > 0.000001) jump(2);
+        break;
+      case "jlt":
+        if (a(0) < a(1)) jump(2);
+        break;
+      case "jle":
+        if (a(0) <= a(1)) jump(2);
+        break;
+      case "jgt":
+        if (a(0) > a(1)) jump(2);
+        break;
+      case "jge":
+        if (a(0) >= a(1)) jump(2);
+        break;
+      case "call": {
+        const target = labels.get(raw.args[0]);
+        if (target === undefined) {
+          addDiagnostic(diagnostics, raw.file, raw.line, `unknown label: ${raw.args[0]}`);
+          pc = block.length;
+          break;
+        }
+        if (callStack.length >= 32) {
+          addDiagnostic(diagnostics, raw.file, raw.line, ".consts exceeded max call depth");
+          pc = block.length;
+          break;
+        }
+        callStack.push(pc);
+        pc = target;
+        break;
+      }
+      case "ret":
+        pc = callStack.pop() ?? block.length;
+        break;
+      case "halt":
+        pc = block.length;
+        break;
+      default:
+        addDiagnostic(diagnostics, raw.file, raw.line, `runtime-only instruction is not available in .consts: ${raw.op}`);
+        pc = block.length;
+        break;
+    }
+  }
+
+  for (let index = 0; index < slotNames.length; ++index) {
+    if (assigned[index]) {
+      constants.set(slotNames[index], values[index]);
+    }
+  }
+}
+
 function parseSource(
   files: ProjectSource[],
   path: string,
   aliases: Map<string, number>,
+  constants: Map<string, number>,
   raw: RawInstruction[],
   labels: Map<string, number>,
   diagnostics: CompileDiagnostic[],
@@ -275,7 +512,7 @@ function parseSource(
     return;
   }
   if (path === "std/screen.inc") {
-    parseSource(files, "std/aliases.inc", aliases, raw, labels, diagnostics, included);
+    parseSource(files, "std/aliases.inc", aliases, constants, raw, labels, diagnostics, included);
     raw.push(...screenInstructions);
     return;
   }
@@ -295,7 +532,50 @@ function parseSource(
     }
     if (line.startsWith(".include")) {
       const includePath = line.slice(".include".length).trim();
-      parseSource(files, normalizePath(path, includePath), aliases, raw, labels, diagnostics, included);
+      parseSource(files, normalizePath(path, includePath), aliases, constants, raw, labels, diagnostics, included);
+      continue;
+    }
+    if (line.startsWith(".consts")) {
+      const block: RawInstruction[] = [];
+      const blockLabels = new Map<string, number>();
+      for (++index; index < lines.length; ++index) {
+        const blockLineNumber = index + 1;
+        const blockLine = stripComment(lines[index]);
+        if (!blockLine) {
+          continue;
+        }
+        if (blockLine === ".end") {
+          break;
+        }
+        if (blockLine.endsWith(":")) {
+          blockLabels.set(blockLine.slice(0, -1), block.length);
+          continue;
+        }
+        const split = blockLine.search(/\s/);
+        const op = (split >= 0 ? blockLine.slice(0, split) : blockLine).toLowerCase();
+        const args = split >= 0 ? splitArgs(blockLine.slice(split + 1)) : [];
+        const expected = operandCounts.get(op);
+        if (expected === undefined || !constAllowedOps.has(op)) {
+          addDiagnostic(diagnostics, path, blockLineNumber, `runtime-only instruction is not available in .consts: ${op}`);
+        } else if (args.length !== expected) {
+          addDiagnostic(diagnostics, path, blockLineNumber, `${op} expects ${expected} operands`);
+        }
+        block.push({ op, args, file: path, line: blockLineNumber });
+      }
+      if (index >= lines.length) {
+        addDiagnostic(diagnostics, path, lineNumber, ".consts missing .end");
+      }
+      executeConstBlock(block, blockLabels, constants, diagnostics);
+      continue;
+    }
+    if (line.startsWith(".const")) {
+      const parts = line.split(/\s+/);
+      const value = Number(parts[2]);
+      if (parts.length !== 3 || !Number.isFinite(value)) {
+        addDiagnostic(diagnostics, path, lineNumber, ".const expects name and value");
+      } else {
+        constants.set(parts[1], value);
+      }
       continue;
     }
     if (line.startsWith(".alias")) {
@@ -324,6 +604,7 @@ function parseOperand(
   instruction: RawInstruction,
   operandIndex: number,
   aliases: Map<string, number>,
+  constants: Map<string, number>,
   labels: Map<string, number>,
   diagnostics: CompileDiagnostic[]
 ): Operand {
@@ -340,6 +621,10 @@ function parseOperand(
   if (register !== undefined) {
     return { kind: "register", reg: register };
   }
+  const constant = constants.get(token);
+  if (constant !== undefined) {
+    return { kind: "immediate", value: constant };
+  }
   const rawRegister = /^r(\d+)$/.exec(token);
   if (rawRegister) {
     return { kind: "register", reg: Number(rawRegister[1]) };
@@ -354,10 +639,11 @@ function parseOperand(
 
 function assemble(files: ProjectSource[], main: string): { instructions: Instruction[]; diagnostics: CompileDiagnostic[] } {
   const aliases = new Map(builtinAliases);
+  const constants = new Map<string, number>();
   const raw: RawInstruction[] = [];
   const labels = new Map<string, number>();
   const diagnostics: CompileDiagnostic[] = [];
-  parseSource(files, main, aliases, raw, labels, diagnostics, new Set());
+  parseSource(files, main, aliases, constants, raw, labels, diagnostics, new Set());
 
   const instructions = raw.map((instruction) => {
     const expected = operandCounts.get(instruction.op);
@@ -368,7 +654,7 @@ function assemble(files: ProjectSource[], main: string): { instructions: Instruc
     }
     const destinations = destinationOperands.get(instruction.op) ?? [];
     const operands = instruction.args.map((token, index) =>
-      parseOperand(token, instruction, index, aliases, labels, diagnostics)
+      parseOperand(token, instruction, index, aliases, constants, labels, diagnostics)
     );
     for (const index of destinations) {
       if (operands[index]?.kind !== "register") {

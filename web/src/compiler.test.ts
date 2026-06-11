@@ -91,4 +91,73 @@ out8 r16, r17, r18, r19
     expect(result.wgsl).toContain("ast_mouse_button_state");
     expect(result.wgsl).toContain("ast_gamepad_axis_state");
   });
+
+  test("compiles .const values", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `.const blue 0.25
+out blue, 0.0, 0.0, 1.0
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_unorm(0.25)");
+  });
+
+  test("compiles .consts math exports", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `.consts
+mov pi, 3.14159265
+add tau, pi, pi
+mul half_tau, tau, 0.5
+.end
+out half_tau, tau, 0.0, 1.0
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_unorm(3.14159265)");
+    expect(result.wgsl).toContain("ast_unorm(6.2831853)");
+  });
+
+  test("compiles .consts control flow and calls", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `.consts
+main:
+mov i, 0
+mov acc, 0
+loop:
+add acc, acc, 0.25
+add i, i, 1
+jlt i, 4, loop
+call scale
+halt
+scale:
+mul value, acc, 128
+ret
+.end
+out8 value, 0, 0, 255
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_byte(128.0)");
+  });
 });
