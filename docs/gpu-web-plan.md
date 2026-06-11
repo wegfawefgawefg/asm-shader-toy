@@ -44,9 +44,13 @@ is an accelerating backend for programs that fit the validated subset.
   requests a native adapter/device, dispatches a small handwritten compute
   shader, runs WGSL emitted from asm into an `rgba8unorm` storage texture, reads
   data back to CPU memory, and verifies native WebGPU execution works on
-  supported hosts.
+  supported hosts. The optional build also creates `ast-webgpu-frame`, an
+  experimental headless renderer that runs one deterministic asm image pass on
+  native WebGPU, can write a PPM frame, and can compare GPU readback against the
+  CPU VM.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU rendering is still unimplemented.
+  falling back. Native WebGPU SDL presentation, media channels, and feedback
+  buffers are still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm

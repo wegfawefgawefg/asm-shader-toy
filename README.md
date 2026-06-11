@@ -53,16 +53,22 @@ npm install
 npm run build
 ```
 
-Build the optional native WebGPU probe:
+Build the optional native WebGPU tools:
 
 ```sh
 ./scripts/build_webgpu_probe.sh
 ./build-webgpu-probe/ast-webgpu-probe
+./build-webgpu-probe/ast-webgpu-frame examples/basics/plasma.asm \
+  --size gba \
+  --compare-cpu \
+  --output /tmp/asm-shader-toy-gpu.ppm
 ```
 
 The probe requests a native WebGPU adapter/device, dispatches a tiny handwritten
 compute shader, then runs a WGSL shader emitted from asm into an `rgba8unorm`
-storage texture and verifies CPU readback pixels.
+storage texture and verifies CPU readback pixels. The frame tool renders one
+deterministic asm image pass through emitted WGSL and can compare the GPU
+readback with the CPU VM.
 
 ## Run
 

@@ -137,7 +137,13 @@ if(AST_BUILD_NATIVE_WEBGPU)
     target_compile_features(ast-webgpu-probe PRIVATE cxx_std_20)
     ast_apply_warnings(ast-webgpu-probe)
 
+    add_executable(ast-webgpu-frame src/native_webgpu_frame.cpp)
+    target_link_libraries(ast-webgpu-frame PRIVATE ast::core webgpu)
+    target_compile_features(ast-webgpu-frame PRIVATE cxx_std_20)
+    ast_apply_warnings(ast-webgpu-frame)
+
     if(COMMAND target_copy_webgpu_binaries)
         target_copy_webgpu_binaries(ast-webgpu-probe)
+        target_copy_webgpu_binaries(ast-webgpu-frame)
     endif()
 endif()

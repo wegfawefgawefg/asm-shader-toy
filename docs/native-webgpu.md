@@ -15,6 +15,21 @@ adapter/device, dispatches a small handwritten WGSL compute shader, then
 assembles asm source, emits WGSL through the native compiler, runs that shader
 into an `rgba8unorm` storage texture, and verifies CPU readback pixels.
 
+The same optional build also creates `ast-webgpu-frame`, an experimental
+headless renderer for deterministic single-image programs:
+
+```sh
+./build-webgpu-probe/ast-webgpu-frame examples/basics/plasma.asm \
+  --size gba \
+  --compare-cpu \
+  --output /tmp/asm-shader-toy-gpu.ppm
+```
+
+It dispatches emitted asm WGSL, copies the storage texture back to CPU memory,
+optionally compares the result with the CPU VM, and writes a binary PPM frame
+when `--output` is provided. SDL presentation, loaded media channels, and
+feedback buffers are still future native WebGPU work.
+
 The current default uses:
 
 - `AST_WEBGPU_DISTRIBUTION_TAG=main-v0.2.0`

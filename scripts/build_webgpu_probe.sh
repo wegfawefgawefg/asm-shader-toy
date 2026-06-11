@@ -10,4 +10,4 @@ cmake -S "${repo_root}" -B "${repo_root}/build-webgpu-probe" \
     -DAST_STRICT=ON \
     -DAST_WARN_AS_ERROR=ON
 
-cmake --build "${repo_root}/build-webgpu-probe" --target ast-webgpu-probe
+cmake --build "${repo_root}/build-webgpu-probe" --target ast-webgpu-probe ast-webgpu-frame
