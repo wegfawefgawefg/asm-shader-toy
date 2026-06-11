@@ -595,6 +595,7 @@ void test_example_assembles() {
         "examples/buffers/life_buffer.asm",
         "examples/buffers/life_display.asm",
         "examples/input/live_controls.asm",
+        "examples/microphone/mic_scope.asm",
         "examples/input/mouse_rings.asm",
         "examples/multifile/main.asm",
         "examples/textures/image_passthrough.asm",

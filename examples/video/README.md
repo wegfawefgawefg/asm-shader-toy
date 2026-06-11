@@ -1,7 +1,7 @@
 # Video Examples
 
-Video channels are decoded at startup with local `ffmpeg` and `ffprobe`, then
-sampled through the same `tex` instruction used by static image channels.
+Video channels stream decoded frames with local `ffmpeg` and `ffprobe`, then
+sample through the same `tex` instruction used by static image channels.
 
 The repository includes a tiny generated fixture:
 
@@ -33,5 +33,6 @@ Or run the stylized poster/edge version:
   --scale 2
 ```
 
-Video frames are currently decoded and preloaded at startup. That keeps sampling
-simple, but it is not appropriate for full movies yet.
+Video channels keep only the current decoded frame in memory. Very large clips
+can still be expensive to shade on the CPU, but the runner no longer preloads
+the whole decoded video.

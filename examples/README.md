@@ -38,6 +38,18 @@ Run from the repository root after building:
   --webcam0 \
   --size 320x240 \
   --scale 2
+./build/asm-shader-toy examples/audio/audio_scope.asm \
+  --audio0 examples/assets/audio/two_tone.wav \
+  --size 320x180 \
+  --scale 2
+./build/asm-shader-toy examples/microphone/mic_scope.asm \
+  --mic0 \
+  --size 320x180 \
+  --scale 2
+./build/asm-shader-toy examples/textures/noise_field.asm \
+  --noise0 42 \
+  --size gba \
+  --scale 4
 ```
 
 Windowed examples hot reload the main file and any `.include` files on save.
@@ -51,8 +63,10 @@ Folders:
 
 - `basics/`: time and simple procedural color.
 - `input/`: mouse-driven examples.
-- `textures/`: static image channel examples.
+- `textures/`: static image and generated-noise channel examples.
 - `buffers/`: feedback-buffer examples.
+- `audio/`: audio-file channel examples.
+- `microphone/`: live microphone channel examples.
 - `multifile/`: local include project examples.
 - `perf/`: intentionally heavy benchmark shaders.
 - `raymarch/`: sphere/planet-style visuals.
@@ -90,11 +104,10 @@ scratch names such as `uv_x`, `uv_y`, `pos_x`, `pos_y`, `color_r`, `tex0_r`,
 `tex1_r`, and `tmp0`. Standard aliases are reserved, so user `.alias`
 directives cannot redefine them.
 
-The current runner supports static image channels, video channels decoded
+The current runner supports static image channels, streaming video channels
 through local `ffmpeg`/`ffprobe`, webcam channels through local `ffmpeg`/V4L2,
-and four feedback buffer passes. Video frames are currently preloaded, so use
-short clips until streaming decode exists. Audio channels are planned but not
-implemented yet.
+audio channels, microphone channels through local `ffmpeg`/PulseAudio,
+generated noise channels, and four feedback buffer passes.
 
 `raymarch/pixelated_planet.asm` is adapted from the CC0 Godot Shaders post
 "3D Pixelated Planet", which credits the YouTube short as inspiration.
