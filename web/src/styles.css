@@ -58,14 +58,22 @@ textarea {
   overflow: auto;
 }
 
-.channel-list {
+.control-section {
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #2b3138;
+  background: #12161a;
 }
 
-.buffer-list {
-  display: grid;
-  gap: 6px;
+.control-title {
+  margin: 0;
+  color: #aab2bd;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .sidebar-section {
@@ -77,7 +85,7 @@ textarea {
 .sidebar-scroll {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
@@ -135,10 +143,10 @@ textarea {
 .channel {
   display: grid;
   gap: 4px;
-  padding: 7px;
-  border: 1px solid #2b3138;
+  padding: 6px;
+  border: 1px solid #303741;
   border-radius: 0;
-  background: #12161a;
+  background: #171b20;
   min-width: 0;
 }
 
@@ -157,7 +165,7 @@ textarea {
 
 .channel-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 38px));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -370,10 +378,18 @@ textarea {
   padding: 10px 12px;
   overflow: auto;
   border-top: 1px solid #2b3138;
-  background: #181217;
-  color: #ffb4b4;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
+}
+
+.diagnostics[data-kind="ok"] {
+  background: #101912;
+  color: #9ee6a8;
+}
+
+.diagnostics[data-kind="error"] {
+  background: #181217;
+  color: #ffb4b4;
 }
 
 .preview-pane {

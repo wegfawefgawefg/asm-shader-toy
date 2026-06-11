@@ -95,6 +95,40 @@ it opens an SDL window, creates a WebGPU surface from the native window handle,
 configures the surface, clears it for a few frames, and presents. It does not
 run emitted asm WGSL.
 
+## Main Runner Integration Plan
+
+The native GPU path should eventually move from separate experimental tools
+into the normal `asm-shader-toy` executable behind an explicit flag:
+
+```sh
+./build/asm-shader-toy examples/basics/plasma.asm --gpu --size gba --scale 4
+```
+
+Target behavior:
+
+- Keep CPU rendering as the default until the GPU path has matching coverage.
+- Add `--gpu` to use the existing native WebGPU window runner pipeline.
+- Reuse the same assembler, WGSL compiler, input metadata, feedback buffer
+  ping-pong, and nearest-neighbor presentation rules as the web runner.
+- Support the same practical channel set as the CPU runner: images, generated
+  noise, video files, audio files, webcam, microphone, and feedback buffers.
+- Preserve existing hot reload behavior for the main program and includes.
+- Report GPU compilation/device errors clearly and keep the last good program
+  alive when a reload fails.
+- Add `--gpu --measure-fps N` or an equivalent benchmark path once interactive
+  rendering is stable.
+
+Implementation notes:
+
+- `ast-webgpu-run` is the best source to merge from: it already opens a window,
+  dispatches emitted ASM WGSL into an intermediate texture, and presents it with
+  nearest-neighbor scaling.
+- `ast-webgpu-frame` remains useful as the deterministic parity harness. Keep it
+  as a CI/debug tool even after `--gpu` lands in the main executable.
+- The main risk is avoiding two parallel renderers that drift. Shared helpers
+  for channel upload, buffer passes, uniform packing, and presentation should be
+  extracted before or during the `--gpu` integration.
+
 Run the repeatable native GPU parity gate:
 
 ```sh

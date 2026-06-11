@@ -117,8 +117,8 @@ appRoot.innerHTML = `
         </div>
       </section>
       <div class="sidebar-scroll">
-        <div class="buffer-list" data-buffers></div>
-        <div class="channel-list" data-channels></div>
+        <section class="control-section" data-buffers></section>
+        <section class="control-section" data-channels></section>
       </div>
     </aside>
     <section class="editor-pane">
@@ -168,6 +168,15 @@ const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
 const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
 const templateSelect = appRoot.querySelector<HTMLSelectElement>("[data-template]")!;
+
+function setDiagnostics(message = "No errors.", kind: "ok" | "error" = "ok"): void {
+  diagnostics.textContent = message;
+  diagnostics.dataset.kind = kind;
+}
+
+function setError(message: string): void {
+  setDiagnostics(message, "error");
+}
 let suppressAsmChange = false;
 let suppressWgslChange = false;
 const asmEditor = createAsmEditor(asmEditorHost, () => {
@@ -297,8 +306,8 @@ function renderProjectUi(): void {
 
 function renderBufferControls(): void {
   bufferList.replaceChildren();
-  const title = document.createElement("div");
-  title.className = "section-title";
+  const title = document.createElement("h2");
+  title.className = "control-title";
   title.textContent = "Buffers";
   bufferList.append(title);
   bufferSettings().forEach((buffer, index) => {
@@ -325,6 +334,10 @@ function renderBufferControls(): void {
 
 function renderChannelControls(): void {
   channelList.replaceChildren();
+  const title = document.createElement("h2");
+  title.className = "control-title";
+  title.textContent = "Channels";
+  channelList.append(title);
   state.project.settings.channels.forEach((channel, index) => {
     const wrapper = document.createElement("div");
     wrapper.className = "channel";
@@ -439,12 +452,13 @@ renderProjectUi();
 try {
   gpuContext = await initWebGpu(canvas);
   program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
+  setDiagnostics();
   statusText.textContent = `WebGPU ready (${gpuContext.adapterLabel})`;
 } catch (error) {
   rendererError = error instanceof Error ? error.message : String(error);
-  diagnostics.textContent = `${rendererError}
+  setError(`${rendererError}
 
-The editor and ASM compiler are still usable, but this browser could not start the WebGPU renderer.`;
+The editor and ASM compiler are still usable, but this browser could not start the WebGPU renderer.`);
   statusText.textContent = "WebGPU unavailable";
 }
 let compileTimer: number | undefined;
@@ -469,7 +483,7 @@ async function waitForSubmittedWork(context: GpuContext): Promise<void> {
 
 async function replaceProgram(status: string): Promise<void> {
   if (!gpuContext) {
-    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    setError(rendererError || "WebGPU is not available.");
     statusText.textContent = "WebGPU unavailable";
     return;
   }
@@ -483,7 +497,7 @@ async function replaceProgram(status: string): Promise<void> {
     await waitForSubmittedWork(context);
     destroyProgram(oldProgram);
     if (version === programBuildVersion) {
-      diagnostics.textContent = "";
+      setDiagnostics();
       statusText.textContent = status;
     }
     return;
@@ -495,7 +509,7 @@ async function replaceProgram(status: string): Promise<void> {
 async function compileWgsl(): Promise<boolean> {
   saveCurrentFile();
   if (!gpuContext) {
-    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    setError(rendererError || "WebGPU is not available.");
     statusText.textContent = "WebGPU unavailable";
     return false;
   }
@@ -503,7 +517,7 @@ async function compileWgsl(): Promise<boolean> {
     await replaceProgram("Compiled WGSL");
     return true;
   } catch (error) {
-    diagnostics.textContent = error instanceof Error ? error.message : String(error);
+    setError(error instanceof Error ? error.message : String(error));
     statusText.textContent = "WGSL compile failed";
     return false;
   }
@@ -511,7 +525,7 @@ async function compileWgsl(): Promise<boolean> {
 
 async function resetProgram(): Promise<void> {
   if (!gpuContext) {
-    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    setError(rendererError || "WebGPU is not available.");
     statusText.textContent = "WebGPU unavailable";
     return;
   }
@@ -799,7 +813,7 @@ async function restoreProjectRuntimeSources(): Promise<void> {
 
 async function compileAsm(): Promise<boolean> {
   saveCurrentFile();
-  diagnostics.textContent = "";
+  setDiagnostics();
   statusText.textContent = "Compiling ASM...";
   const diagnosticsList: string[] = [];
   const maxSteps = state.project.settings.maxSteps ?? 4096;
@@ -818,7 +832,7 @@ async function compileAsm(): Promise<boolean> {
     );
   }
   if (diagnosticsList.length > 0) {
-    diagnostics.textContent = diagnosticsList.join("\n");
+    setError(diagnosticsList.join("\n"));
     statusText.textContent = "ASM compile failed";
     return false;
   }
@@ -840,7 +854,7 @@ function tick(): void {
     inputState.mouseWheelX = 0;
     inputState.mouseWheelY = 0;
     if (gpuContext.errors.length > 0) {
-      diagnostics.textContent = gpuContext.errors.join("\n");
+      setError(gpuContext.errors.join("\n"));
       statusText.textContent = "WebGPU error";
       gpuContext.errors.length = 0;
     }
@@ -911,7 +925,7 @@ appRoot.addEventListener("input", (event) => {
   }
   if (target === templateSelect) {
     void loadTemplate(templateSelect.value).catch((error) => {
-      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      setError(error instanceof Error ? error.message : String(error));
       statusText.textContent = "Template failed";
     });
   }
@@ -980,7 +994,7 @@ appRoot.addEventListener("click", (event) => {
   }
   if (action === "reset") {
     void resetProgram().catch((error) => {
-      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      setError(error instanceof Error ? error.message : String(error));
       statusText.textContent = "Reset failed";
     });
   }
@@ -1024,14 +1038,14 @@ appRoot.addEventListener("click", (event) => {
   if (action === "webcam-channel") {
     const index = Number((event.target as HTMLElement).dataset.channel);
     void setChannelWebcam(index).catch((error) => {
-      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      setError(error instanceof Error ? error.message : String(error));
       statusText.textContent = "Webcam failed";
     });
   }
   if (action === "mic-channel") {
     const index = Number((event.target as HTMLElement).dataset.channel);
     void setChannelMicrophone(index).catch((error) => {
-      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      setError(error instanceof Error ? error.message : String(error));
       statusText.textContent = "Microphone failed";
     });
   }
@@ -1041,7 +1055,7 @@ appRoot.addEventListener("click", (event) => {
     const url = window.prompt("Video URL", current)?.trim();
     if (url) {
       void setChannelVideoUrl(index, url).catch((error) => {
-        diagnostics.textContent = error instanceof Error ? error.message : String(error);
+        setError(error instanceof Error ? error.message : String(error));
         statusText.textContent = "Video URL failed";
       });
     }
