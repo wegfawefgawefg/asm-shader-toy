@@ -1,4 +1,5 @@
 import "./styles.css";
+import { createAsmEditor, setEditorText } from "./asmEditor";
 import { compileAsmToWgsl } from "./compiler";
 import {
   decodeProject,
@@ -111,7 +112,7 @@ appRoot.innerHTML = `
       <div class="split">
         <section class="source-panel">
           <div class="panel-title">ASM Project</div>
-          <textarea data-asm spellcheck="false"></textarea>
+          <div class="code-editor" data-asm></div>
         </section>
         <section class="source-panel">
           <div class="panel-title">WGSL</div>
@@ -131,7 +132,7 @@ const fileList = appRoot.querySelector<HTMLDivElement>(".file-list")!;
 const mainSelect = appRoot.querySelector<HTMLSelectElement>("[data-main]")!;
 const sizeSelect = appRoot.querySelector<HTMLSelectElement>("[data-size]")!;
 const scaleInput = appRoot.querySelector<HTMLInputElement>("[data-scale]")!;
-const asmEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-asm]")!;
+const asmEditorHost = appRoot.querySelector<HTMLDivElement>("[data-asm]")!;
 const wgslEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
@@ -140,6 +141,13 @@ const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
 const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
 const templateSelect = appRoot.querySelector<HTMLSelectElement>("[data-template]")!;
+let suppressAsmChange = false;
+const asmEditor = createAsmEditor(asmEditorHost, () => {
+  if (!suppressAsmChange) {
+    saveCurrentFile();
+    scheduleCompile(compileAsm);
+  }
+});
 
 for (const name of Object.keys(sizePresets)) {
   const option = document.createElement("option");
@@ -196,7 +204,9 @@ function renderProjectUi(): void {
   mainSelect.value = state.project.settings.main;
   sizeSelect.value = state.project.settings.size;
   scaleInput.value = String(state.project.settings.scale);
-  asmEditor.value = currentFile().content;
+  suppressAsmChange = true;
+  setEditorText(asmEditor, currentFile().content);
+  suppressAsmChange = false;
   wgslEditor.value = state.project.settings.wgsl;
   renderBufferControls();
   renderChannelControls();
@@ -333,7 +343,7 @@ function renderChannelControls(): void {
 
 function saveCurrentFile(): void {
   const file = currentFile();
-  file.content = asmEditor.value;
+  file.content = asmEditor.state.doc.toString();
   state.project.settings.wgsl = wgslEditor.value;
 }
 
@@ -343,7 +353,7 @@ let rendererError = "";
 try {
   gpuContext = await initWebGpu(canvas);
   program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
-  statusText.textContent = "WebGPU ready";
+  statusText.textContent = `WebGPU ready (${gpuContext.adapterLabel})`;
 } catch (error) {
   rendererError = error instanceof Error ? error.message : String(error);
   diagnostics.textContent = `${rendererError}
@@ -654,6 +664,11 @@ async function compileAsm(): Promise<void> {
 function tick(): void {
   if (state.running && gpuContext && program) {
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources);
+    if (gpuContext.errors.length > 0) {
+      diagnostics.textContent = gpuContext.errors.join("\n");
+      statusText.textContent = "WebGPU error";
+      gpuContext.errors.length = 0;
+    }
     state.frame += 1;
     state.fpsFrames += 1;
     const now = performance.now() / 1000;
@@ -702,9 +717,9 @@ appRoot.addEventListener("input", (event) => {
     void setChannelAudio(Number(target.dataset.audioChannel), target.files[0]);
     return;
   }
-  if (target === asmEditor || target === wgslEditor) {
+  if (target === wgslEditor) {
     saveCurrentFile();
-    scheduleCompile(target === asmEditor ? compileAsm : compileWgsl);
+    scheduleCompile(compileWgsl);
   }
   if (target === sizeSelect) {
     state.project.settings.size = sizeSelect.value as ProjectBundle["settings"]["size"];

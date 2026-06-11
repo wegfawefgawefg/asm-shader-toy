@@ -266,6 +266,21 @@ textarea {
   line-height: 1.45;
 }
 
+.code-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #101317;
+}
+
+.cm-editor {
+  outline: none;
+}
+
+.cm-focused {
+  outline: none !important;
+}
+
 .diagnostics {
   margin: 0;
   padding: 10px 12px;

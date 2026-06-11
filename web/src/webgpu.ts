@@ -3,10 +3,12 @@ import { parseSize, type ChannelSetting, type ProjectSettings } from "./project"
 
 export type GpuContext = {
   device: GPUDevice;
+  adapterLabel: string;
   canvasContext: GPUCanvasContext;
   format: GPUTextureFormat;
   sampler: GPUSampler;
   renderPipeline: GPURenderPipeline;
+  errors: string[];
 };
 
 export type ProgramState = {
@@ -88,11 +90,32 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
   if (!navigator.gpu) {
     throw new Error("WebGPU is not available in this browser.");
   }
-  const adapter = await navigator.gpu.requestAdapter();
+  const attempts: Array<GPURequestAdapterOptions & { label: string }> = [
+    { label: "default" },
+    { label: "high-performance", powerPreference: "high-performance" },
+    { label: "low-power", powerPreference: "low-power" }
+  ];
+  let adapter: GPUAdapter | null = null;
+  let adapterLabel = "";
+  for (const attempt of attempts) {
+    adapter = await navigator.gpu.requestAdapter(attempt);
+    if (adapter) {
+      adapterLabel = attempt.label;
+      break;
+    }
+  }
   if (!adapter) {
-    throw new Error("No WebGPU adapter is available.");
+    throw new Error(
+      "No WebGPU adapter is available. On Linux Chrome/Brave, try launching with --enable-unsafe-webgpu --enable-features=Vulkan --ignore-gpu-blocklist and check chrome://gpu."
+    );
   }
   const device = await adapter.requestDevice();
+  const errors: string[] = [];
+  device.addEventListener("uncapturederror", (event) => {
+    const message = event.error.message;
+    errors.push(message);
+    console.error(message);
+  });
   const canvasContext = canvas.getContext("webgpu");
   if (!canvasContext) {
     throw new Error("Could not create WebGPU canvas context.");
@@ -114,7 +137,7 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
     primitive: { topology: "triangle-list" }
   });
 
-  return { device, canvasContext, format, sampler, renderPipeline };
+  return { device, adapterLabel, canvasContext, format, sampler, renderPipeline, errors };
 }
 
 function makeFallbackTexture(device: GPUDevice): GPUTexture {

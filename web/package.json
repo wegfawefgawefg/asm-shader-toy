@@ -16,5 +16,10 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "@codemirror/language": "^6.12.3",
+    "@lezer/highlight": "^1.2.3",
+    "codemirror": "^6.0.2"
   }
 }
