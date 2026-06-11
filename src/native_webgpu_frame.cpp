@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -43,6 +44,7 @@ struct Args {
     int tolerance = 1;
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> noise_specs;
+    std::array<std::string, 4> video_paths;
     std::array<std::string, 4> buffer_paths;
 };
 
@@ -116,6 +118,7 @@ void print_usage() {
         << "       [--frame N] [--frames N] [--time seconds] [--max-steps N] [--compare-cpu]\n"
         << "       [--channel0 path] through [--channel3 path] load image inputs\n"
         << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n"
+        << "       [--video0 path] through [--video3 path] sample video inputs with ffmpeg\n"
         << "       [--buffer0 path] through [--buffer3 path] run feedback buffer passes\n";
 }
 
@@ -243,6 +246,16 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.noise_specs[static_cast<std::size_t>(channel)] = std::move(seed);
             continue;
         }
+        if (arg == "--video0" || arg == "--video1" || arg == "--video2" ||
+            arg == "--video3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.video_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
         if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" ||
             arg == "--buffer3") {
             const auto value = next();
@@ -270,6 +283,10 @@ std::uint32_t align_to(std::uint32_t value, std::uint32_t alignment) {
     return ((value + alignment - 1U) / alignment) * alignment;
 }
 
+float target_channel_time(const Args& args) {
+    return args.time + static_cast<float>(args.frames - 1) * args.time_delta;
+}
+
 std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b,
                          std::uint8_t a = 255) {
     return (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
@@ -292,6 +309,85 @@ std::uint32_t seed_from_text(const std::string& text) {
         seed *= 16777619U;
     }
     return seed;
+}
+
+std::string shell_quote(const std::string& text) {
+    std::string quoted = "'";
+    for (char ch : text) {
+        if (ch == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted.push_back(ch);
+        }
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
+std::optional<std::string> read_command_stdout(const std::string& command) {
+    FILE* pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+
+    std::string output;
+    std::array<char, 4096> buffer{};
+    while (true) {
+        const std::size_t read = std::fread(buffer.data(), 1, buffer.size(), pipe);
+        if (read > 0) {
+            output.append(buffer.data(), read);
+        }
+        if (read < buffer.size()) {
+            break;
+        }
+    }
+
+    const int status = pclose(pipe);
+    if (status != 0) {
+        return std::nullopt;
+    }
+    return output;
+}
+
+std::optional<std::string> read_command_stdout_exact(const std::string& command,
+                                                     std::size_t expected_size) {
+    FILE* pipe = popen(command.c_str(), "r");
+    if (pipe == nullptr) {
+        return std::nullopt;
+    }
+
+    std::string output;
+    output.resize(expected_size);
+    std::size_t offset = 0;
+    while (offset < expected_size) {
+        const std::size_t read =
+            std::fread(output.data() + offset, 1, expected_size - offset, pipe);
+        if (read == 0) {
+            break;
+        }
+        offset += read;
+    }
+
+    const int status = pclose(pipe);
+    if (status != 0 || offset != expected_size) {
+        return std::nullopt;
+    }
+    return output;
+}
+
+double parse_frame_rate(std::string_view text) {
+    const std::size_t split = text.find('/');
+    if (split == std::string_view::npos) {
+        const double value = std::atof(std::string{text}.c_str());
+        return value > 0.0 ? value : 30.0;
+    }
+
+    const double numerator = std::atof(std::string{text.substr(0, split)}.c_str());
+    const double denominator = std::atof(std::string{text.substr(split + 1)}.c_str());
+    if (numerator <= 0.0 || denominator <= 0.0) {
+        return 30.0;
+    }
+    return numerator / denominator;
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -350,6 +446,86 @@ void load_noise_channel(const std::string& seed_text, ast::ImageChannel& out) {
     }
 }
 
+bool load_video_channel(const std::string& path, float sample_time, ast::ImageChannel& out) {
+    const std::string quoted_path = shell_quote(path);
+    const std::string probe_command =
+        "ffprobe -v error -select_streams v:0 "
+        "-show_entries stream=width,height,avg_frame_rate:format=duration "
+        "-of default=noprint_wrappers=1 " +
+        quoted_path;
+    const std::optional<std::string> probe_output = read_command_stdout(probe_command);
+    if (!probe_output.has_value()) {
+        std::cerr << "ffprobe failed for " << path << '\n';
+        return false;
+    }
+
+    int width = 0;
+    int height = 0;
+    double frames_per_second = 30.0;
+    double duration_seconds = 0.0;
+    std::size_t offset = 0;
+    while (offset < probe_output->size()) {
+        const std::size_t end = probe_output->find('\n', offset);
+        const std::string_view line{probe_output->data() + offset,
+                                    (end == std::string::npos ? probe_output->size() : end) -
+                                        offset};
+        if (line.starts_with("width=")) {
+            width = std::atoi(std::string{line.substr(6)}.c_str());
+        } else if (line.starts_with("height=")) {
+            height = std::atoi(std::string{line.substr(7)}.c_str());
+        } else if (line.starts_with("avg_frame_rate=")) {
+            frames_per_second = parse_frame_rate(line.substr(15));
+        } else if (line.starts_with("duration=")) {
+            duration_seconds = std::atof(std::string{line.substr(9)}.c_str());
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        offset = end + 1;
+    }
+
+    if (width <= 0 || height <= 0) {
+        std::cerr << "could not determine video dimensions for " << path << '\n';
+        return false;
+    }
+
+    const double playback_time =
+        duration_seconds > 0.0 ? std::fmod(std::max(0.0F, sample_time), duration_seconds)
+                               : std::max(0.0F, sample_time);
+    const long long target_frame =
+        std::max(0LL, static_cast<long long>(std::floor(playback_time * frames_per_second)));
+    const double snapped_time = frames_per_second > 0.0
+                                    ? static_cast<double>(target_frame) / frames_per_second
+                                    : playback_time;
+
+    const std::string decode_command = "ffmpeg -v error -ss " +
+                                       std::to_string(snapped_time) + " -i " + quoted_path +
+                                       " -frames:v 1 -f rawvideo -pix_fmt rgba - 2>/dev/null";
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    const std::optional<std::string> raw_frame =
+        read_command_stdout_exact(decode_command, frame_bytes);
+    if (!raw_frame.has_value()) {
+        std::cerr << "ffmpeg video frame decode failed for " << path << '\n';
+        return false;
+    }
+
+    out.width = width;
+    out.height = height;
+    out.time = static_cast<float>(snapped_time);
+    out.sample_rate = 0.0F;
+    out.external_pixels = nullptr;
+    out.pixels.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    for (std::size_t pixel = 0; pixel < out.pixels.size(); ++pixel) {
+        const std::uint8_t r = static_cast<std::uint8_t>((*raw_frame)[pixel * 4U + 0U]);
+        const std::uint8_t g = static_cast<std::uint8_t>((*raw_frame)[pixel * 4U + 1U]);
+        const std::uint8_t b = static_cast<std::uint8_t>((*raw_frame)[pixel * 4U + 2U]);
+        const std::uint8_t a = static_cast<std::uint8_t>((*raw_frame)[pixel * 4U + 3U]);
+        out.pixels[pixel] = pack_rgba8(r, g, b, a);
+    }
+    return true;
+}
+
 bool load_channels(const Args& args, ast::ChannelSet& channels) {
     for (std::size_t i = 0; i < args.channel_paths.size(); ++i) {
         if (!args.channel_paths[i].empty() &&
@@ -360,6 +536,13 @@ bool load_channels(const Args& args, ast::ChannelSet& channels) {
     for (std::size_t i = 0; i < args.noise_specs.size(); ++i) {
         if (!args.noise_specs[i].empty()) {
             load_noise_channel(args.noise_specs[i], channels.image[i]);
+        }
+    }
+    const float channel_time = target_channel_time(args);
+    for (std::size_t i = 0; i < args.video_paths.size(); ++i) {
+        if (!args.video_paths[i].empty() &&
+            !load_video_channel(args.video_paths[i], channel_time, channels.image[i])) {
+            return false;
         }
     }
     return true;

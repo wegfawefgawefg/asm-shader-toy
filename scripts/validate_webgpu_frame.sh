@@ -75,3 +75,17 @@ run_case "feedback_ramp" \
     --buffer0 "${repo_root}/examples/buffers/ramp_buffer.asm" \
     --size 32x24 \
     --frames 4
+
+run_case "video_texel" \
+    "${repo_root}/examples/video/video_texel.asm" \
+    --video0 "${repo_root}/examples/assets/video/testsrc_160x90.mp4" \
+    --size 160x90 \
+    --time 0.5 \
+    --frame 30
+
+echo "webgpu-frame: video_channel_smoke"
+"${frame_tool}" "${repo_root}/examples/video/video_channel.asm" \
+    --video0 "${repo_root}/examples/assets/video/testsrc_160x90.mp4" \
+    --size 80x45 \
+    --time 0.5 \
+    --frame 30

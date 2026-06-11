@@ -55,6 +55,9 @@ grep -q "channel0_texture" /tmp/asm-shader-toy-image-passthrough.wgsl
 ./build/asm-shader-toy examples/video/video_channel.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --dry-run
+./build/asm-shader-toy examples/video/video_texel.asm \
+    --video0 examples/assets/video/testsrc_160x90.mp4 \
+    --dry-run
 ./build/asm-shader-toy examples/video/poster_edges.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --dry-run
@@ -102,6 +105,11 @@ grep -q "channel0_texture" /tmp/asm-shader-toy-image-passthrough.wgsl
     --no-graphics \
     --frames 2
 ./build/asm-shader-toy examples/video/video_channel.asm \
+    --video0 examples/assets/video/testsrc_160x90.mp4 \
+    --size 160x90 \
+    --no-graphics \
+    --frames 4
+./build/asm-shader-toy examples/video/video_texel.asm \
     --video0 examples/assets/video/testsrc_160x90.mp4 \
     --size 160x90 \
     --no-graphics \

@@ -76,6 +76,11 @@ Build the optional native WebGPU tools:
   --size 32x24 \
   --frames 4 \
   --compare-cpu
+./build-webgpu-probe/ast-webgpu-frame examples/video/video_texel.asm \
+  --video0 examples/assets/video/testsrc_160x90.mp4 \
+  --size 160x90 \
+  --time 0.5 \
+  --compare-cpu
 ./scripts/validate_webgpu_frame.sh
 ```
 
@@ -84,7 +89,7 @@ compute shader, then runs a WGSL shader emitted from asm into an `rgba8unorm`
 storage texture and verifies CPU readback pixels. The frame tool renders one
 deterministic asm image pass through emitted WGSL and can compare the GPU
 readback with the CPU VM, including static image, generated noise, and feedback
-buffer channels.
+buffer channels. It can also sample a deterministic frame from video channels.
 
 ## Run
 
