@@ -155,11 +155,31 @@ function renderChannelControls(): void {
     input.accept = "image/png,image/jpeg,image/webp,image/gif";
     input.dataset.channel = String(index);
     input.className = "channel-input";
+    const controls = document.createElement("div");
+    controls.className = "channel-controls";
+    const seedInput = document.createElement("input");
+    seedInput.type = "text";
+    seedInput.value = channel.seed ?? `seed${index}`;
+    seedInput.dataset.noiseSeed = String(index);
+    seedInput.className = "channel-seed";
+    const noiseButton = document.createElement("button");
+    noiseButton.className = "button channel-button";
+    noiseButton.type = "button";
+    noiseButton.dataset.action = "noise-channel";
+    noiseButton.dataset.channel = String(index);
+    noiseButton.textContent = "Noise";
+    controls.append(seedInput, noiseButton);
     const meta = document.createElement("div");
     meta.className = "channel-meta";
-    meta.textContent = channel.imageDataUrl ? `${channel.width}x${channel.height} ${channel.name}` : "fallback 1x1";
+    if (channel.kind === "noise" || channel.seed) {
+      meta.textContent = `${channel.width}x${channel.height} noise:${channel.seed ?? channel.name}`;
+    } else if (channel.imageDataUrl) {
+      meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
+    } else {
+      meta.textContent = "fallback 1x1";
+    }
     label.append(input);
-    wrapper.append(label, meta);
+    wrapper.append(label, controls, meta);
     channelList.append(wrapper);
   });
 }
@@ -209,12 +229,26 @@ async function setChannelImage(index: number, file: File): Promise<void> {
   const imageDataUrl = await dataUrlForFile(file);
   const dimensions = await imageDimensions(imageDataUrl);
   const channel: ChannelSetting = {
+    kind: "image",
     name: file.name,
     width: dimensions.width,
     height: dimensions.height,
     imageDataUrl
   };
   state.project.settings.channels[index] = channel;
+  renderChannelControls();
+  await compileWgsl();
+}
+
+async function setChannelNoise(index: number, seed: string): Promise<void> {
+  const normalizedSeed = seed.trim() || `seed${index}`;
+  state.project.settings.channels[index] = {
+    kind: "noise",
+    name: `noise:${normalizedSeed}`,
+    width: 256,
+    height: 256,
+    seed: normalizedSeed
+  };
   renderChannelControls();
   await compileWgsl();
 }
@@ -304,6 +338,11 @@ appRoot.addEventListener("click", (event) => {
         statusText.textContent = "Share URL copied";
       });
     });
+  }
+  if (action === "noise-channel") {
+    const index = Number((event.target as HTMLElement).dataset.channel);
+    const seed = appRoot.querySelector<HTMLInputElement>(`[data-noise-seed="${index}"]`)?.value ?? `seed${index}`;
+    void setChannelNoise(index, seed);
   }
 });
 

@@ -35,17 +35,16 @@ is an accelerating backend for programs that fit the validated subset.
 - The native CLI exposes that compiler through `--emit-wgsl path|-`, which
   writes WGSL and exits before SDL/media setup.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU execution and the browser runner are still
-  unimplemented.
+  falling back. Native WebGPU execution is still unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
   compilation exists for a prototype subset covering includes, aliases,
   `.const`, `.consts`, labels, branches, calls, arithmetic, texture/channel
-  metadata ops, live input query ops, and output. Browser image upload controls
-  can bind static images to `channel0..3` and preserve them in project bundles.
-  Generated noise, webcam, microphone/audio, video, feedback buffers, and native
-  WebGPU execution are still unimplemented.
+  metadata ops, live input query ops, and output. Browser channel controls can
+  bind static images or generated noise textures to `channel0..3` and preserve
+  them in project bundles. Webcam, microphone/audio, video, feedback buffers,
+  and native WebGPU execution are still unimplemented.
 
 ## Why WGSL First
 
@@ -123,8 +122,8 @@ is an accelerating backend for programs that fit the validated subset.
 
    In order:
 
-   - generated noise
-   - image upload
+   - generated noise. Done in the browser prototype.
+   - image upload. Done in the browser prototype.
    - webcam through `getUserMedia`
    - microphone/audio analyser through Web Audio
    - video upload or URL-backed video where browser policy allows

@@ -79,6 +79,29 @@ textarea {
   font-size: 11px;
 }
 
+.channel-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.channel-seed {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #3a434d;
+  border-radius: 6px;
+  padding: 0 7px;
+  background: #20262d;
+  color: #e6e8ea;
+  font-size: 11px;
+}
+
+.channel-button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
 .channel-meta {
   color: #aab2bd;
   font-size: 11px;

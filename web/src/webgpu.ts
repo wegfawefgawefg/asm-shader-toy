@@ -1,3 +1,4 @@
+import { makeNoisePixels, noiseTextureSize } from "./noise";
 import { parseSize, type ChannelSetting, type ProjectSettings } from "./project";
 
 type GpuContext = {
@@ -99,6 +100,21 @@ function makeFallbackTexture(device: GPUDevice): GPUTexture {
   return texture;
 }
 
+function makeNoiseTexture(device: GPUDevice, seed: string): GPUTexture {
+  const texture = device.createTexture({
+    size: { width: noiseTextureSize, height: noiseTextureSize },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+  });
+  device.queue.writeTexture(
+    { texture },
+    makeNoisePixels(seed),
+    { bytesPerRow: noiseTextureSize * 4, rowsPerImage: noiseTextureSize },
+    { width: noiseTextureSize, height: noiseTextureSize }
+  );
+  return texture;
+}
+
 function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSettings, frame: number, start: number): void {
   const size = parseSize(settings.size);
   const values = new Float32Array(uniformFloatCount);
@@ -125,6 +141,9 @@ async function loadImageBitmap(dataUrl: string): Promise<ImageBitmap> {
 }
 
 async function makeChannelTexture(device: GPUDevice, channel: ChannelSetting): Promise<GPUTexture> {
+  if (channel.kind === "noise" || channel.seed) {
+    return makeNoiseTexture(device, channel.seed ?? channel.name);
+  }
   if (!channel.imageDataUrl) {
     return makeFallbackTexture(device);
   }
@@ -163,7 +182,7 @@ export async function createProgram(context: GpuContext, source: string, setting
   });
   const normalizedChannels = [...(settings.channels ?? [])];
   while (normalizedChannels.length < 4) {
-    normalizedChannels.push({ name: `channel${normalizedChannels.length}`, width: 1, height: 1 });
+    normalizedChannels.push({ kind: "fallback", name: `channel${normalizedChannels.length}`, width: 1, height: 1 });
   }
   const channelTextures = await Promise.all(normalizedChannels.slice(0, 4).map((channel) => makeChannelTexture(device, channel)));
   const bindGroup = device.createBindGroup({

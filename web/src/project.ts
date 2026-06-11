@@ -1,3 +1,5 @@
+import { compileAsmToWgsl } from "./compiler";
+
 export type ProjectFile = {
   path: string;
   content: string;
@@ -19,10 +21,12 @@ export type ProjectBundle = {
 };
 
 export type ChannelSetting = {
+  kind?: "fallback" | "image" | "noise";
   name: string;
   width: number;
   height: number;
   imageDataUrl?: string;
+  seed?: string;
 };
 
 export const sizePresets: Record<SizePreset, { width: number; height: number }> = {
@@ -64,30 +68,38 @@ export function makeDefaultProject(): ProjectBundle {
       size: "gba",
       scale: 4,
       channels: [
-        { name: "channel0", width: 1, height: 1 },
-        { name: "channel1", width: 1, height: 1 },
-        { name: "channel2", width: 1, height: 1 },
-        { name: "channel3", width: 1, height: 1 }
+        { kind: "fallback", name: "channel0", width: 1, height: 1 },
+        { kind: "fallback", name: "channel1", width: 1, height: 1 },
+        { kind: "fallback", name: "channel2", width: 1, height: 1 },
+        { kind: "fallback", name: "channel3", width: 1, height: 1 }
       ]
     }
+  };
+}
+
+function normalizeChannel(channel: Partial<ChannelSetting> | undefined, index: number): ChannelSetting {
+  const kind = channel?.kind ?? (channel?.seed ? "noise" : channel?.imageDataUrl ? "image" : "fallback");
+  const defaultSize = kind === "noise" ? 256 : 1;
+  return {
+    kind,
+    name: channel?.name || `channel${index}`,
+    width: channel?.width || defaultSize,
+    height: channel?.height || defaultSize,
+    imageDataUrl: channel?.imageDataUrl,
+    seed: channel?.seed
   };
 }
 
 export function normalizeProject(bundle: ProjectBundle): ProjectBundle {
   const channels = [...(bundle.settings.channels ?? [])];
   while (channels.length < 4) {
-    channels.push({ name: `channel${channels.length}`, width: 1, height: 1 });
+    channels.push({ kind: "fallback", name: `channel${channels.length}`, width: 1, height: 1 });
   }
   return {
     ...bundle,
     settings: {
       ...bundle.settings,
-      channels: channels.slice(0, 4).map((channel, index) => ({
-        name: channel.name || `channel${index}`,
-        width: channel.width || 1,
-        height: channel.height || 1,
-        imageDataUrl: channel.imageDataUrl
-      }))
+      channels: channels.slice(0, 4).map((channel, index) => normalizeChannel(channel, index))
     }
   };
 }
@@ -157,4 +169,3 @@ export async function decodeProject(hash: string): Promise<ProjectBundle | null>
     return null;
   }
 }
-import { compileAsmToWgsl } from "./compiler";
