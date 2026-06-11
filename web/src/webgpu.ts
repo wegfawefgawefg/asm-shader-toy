@@ -305,6 +305,34 @@ function makeOutputTexture(device: GPUDevice, width: number, height: number): GP
   });
 }
 
+async function createComputePipeline(
+  device: GPUDevice,
+  layout: GPUPipelineLayout,
+  source: string,
+  label: string
+): Promise<GPUComputePipeline> {
+  device.pushErrorScope("validation");
+  try {
+    const module = device.createShaderModule({ code: source, label: `${label} shader` });
+    const pipeline = await device.createComputePipelineAsync({
+      label,
+      layout,
+      compute: { module, entryPoint: "main" }
+    });
+    const error = await device.popErrorScope();
+    if (error) {
+      throw new Error(error.message);
+    }
+    return pipeline;
+  } catch (error) {
+    const scopedError = await device.popErrorScope().catch(() => null);
+    if (scopedError) {
+      throw new Error(scopedError.message);
+    }
+    throw error;
+  }
+}
+
 export async function createProgram(
   context: GpuContext,
   source: string,
@@ -313,11 +341,7 @@ export async function createProgram(
 ): Promise<ProgramState> {
   const { device } = context;
   const size = parseSize(settings.size);
-  const module = device.createShaderModule({ code: source });
-  const computePipeline = await device.createComputePipelineAsync({
-    layout: context.computePipelineLayout,
-    compute: { module, entryPoint: "main" }
-  });
+  const computePipeline = await createComputePipeline(device, context.computePipelineLayout, source, "image pass");
   const outputTexture = makeOutputTexture(device, size.width, size.height);
   const outputView = outputTexture.createView();
   const uniformBuffer = device.createBuffer({
@@ -347,11 +371,12 @@ export async function createProgram(
       if (!buffer?.wgsl) {
         return null;
       }
-      const bufferModule = device.createShaderModule({ code: buffer.wgsl });
-      const bufferPipeline = await device.createComputePipelineAsync({
-        layout: context.computePipelineLayout,
-        compute: { module: bufferModule, entryPoint: "main" }
-      });
+      const bufferPipeline = await createComputePipeline(
+        device,
+        context.computePipelineLayout,
+        buffer.wgsl,
+        `buffer${channel} pass`
+      );
       const first = makeOutputTexture(device, size.width, size.height);
       const second = makeOutputTexture(device, size.width, size.height);
       return {

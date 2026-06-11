@@ -449,7 +449,7 @@ The editor and ASM compiler are still usable, but this browser could not start t
 }
 let compileTimer: number | undefined;
 
-function scheduleCompile(task: () => Promise<void>): void {
+function scheduleCompile(task: () => Promise<unknown>): void {
   if (compileTimer !== undefined) {
     window.clearTimeout(compileTimer);
   }
@@ -476,32 +476,36 @@ async function replaceProgram(status: string): Promise<void> {
   const context = gpuContext;
   const oldProgram = program;
   const version = ++programBuildVersion;
-  program = null;
-  await waitForSubmittedWork(context);
-  destroyProgram(oldProgram);
+  statusText.textContent = "Building WGSL...";
   const nextProgram = await createProgram(context, state.project.settings.wgsl, state.project.settings, channelSources);
   if (version === programBuildVersion) {
     program = nextProgram;
-    diagnostics.textContent = "";
-    statusText.textContent = status;
+    await waitForSubmittedWork(context);
+    destroyProgram(oldProgram);
+    if (version === programBuildVersion) {
+      diagnostics.textContent = "";
+      statusText.textContent = status;
+    }
     return;
   }
   await waitForSubmittedWork(context);
   destroyProgram(nextProgram);
 }
 
-async function compileWgsl(): Promise<void> {
+async function compileWgsl(): Promise<boolean> {
   saveCurrentFile();
   if (!gpuContext) {
     diagnostics.textContent = rendererError || "WebGPU is not available.";
     statusText.textContent = "WebGPU unavailable";
-    return;
+    return false;
   }
   try {
     await replaceProgram("Compiled WGSL");
+    return true;
   } catch (error) {
     diagnostics.textContent = error instanceof Error ? error.message : String(error);
     statusText.textContent = "WGSL compile failed";
+    return false;
   }
 }
 
@@ -793,8 +797,10 @@ async function restoreProjectRuntimeSources(): Promise<void> {
 }
 
 
-async function compileAsm(): Promise<void> {
+async function compileAsm(): Promise<boolean> {
   saveCurrentFile();
+  diagnostics.textContent = "";
+  statusText.textContent = "Compiling ASM...";
   const diagnosticsList: string[] = [];
   const maxSteps = state.project.settings.maxSteps ?? 4096;
   const imageResult = compileAsmToWgsl(state.project.files, state.project.settings.main, maxSteps);
@@ -814,17 +820,22 @@ async function compileAsm(): Promise<void> {
   if (diagnosticsList.length > 0) {
     diagnostics.textContent = diagnosticsList.join("\n");
     statusText.textContent = "ASM compile failed";
-    return;
+    return false;
   }
   state.project.settings.wgsl = imageResult.wgsl;
   suppressWgslChange = true;
   setEditorText(wgslEditor, imageResult.wgsl);
   suppressWgslChange = false;
-  await compileWgsl();
+  return compileWgsl();
+}
+
+function currentSizeKey(): string {
+  const size = parseSize(state.project.settings.size);
+  return `${size.width}x${size.height}`;
 }
 
 function tick(): void {
-  if (state.running && gpuContext && program) {
+  if (state.running && gpuContext && program && program.sizeKey === currentSizeKey()) {
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources, inputState);
     inputState.mouseWheelX = 0;
     inputState.mouseWheelY = 0;
@@ -862,10 +873,13 @@ async function loadTemplate(templateId: string): Promise<void> {
   state.startSeconds = performance.now() / 1000;
   await restoreProjectRuntimeSources();
   renderProjectUi();
-  await compileAsm();
-  templateSelect.value = "";
-  statusText.textContent = `Loaded ${template.name}`;
+  statusText.textContent = `Loading ${template.name}...`;
   history.replaceState(null, "", `#template=${encodeURIComponent(template.id)}`);
+  const loaded = await compileAsm();
+  templateSelect.value = "";
+  if (loaded) {
+    statusText.textContent = `Loaded ${template.name}`;
+  }
 }
 
 appRoot.addEventListener("input", (event) => {

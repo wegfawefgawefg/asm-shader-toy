@@ -154,7 +154,7 @@ export const templateProjects: TemplateProject[] = [
   },
   single("examples/perf/heavy.asm", heavy, { size: "160x160", scale: 3 }),
   single("examples/raymarch/planet_sphere.asm", planetSphere, { size: "160x160", scale: 3 }),
-  single("examples/raymarch/pixelated_planet.asm", pixelatedPlanet, { maxSteps: 16384 }),
+  single("examples/raymarch/pixelated_planet.asm", pixelatedPlanet),
   single("examples/textures/image_passthrough.asm", imagePassthrough, { channels: withChannels([checkerChannel]) }),
   single("examples/textures/multi_image_mix.asm", multiImageMix, { channels: withChannels([checkerChannel, barsChannel]) }),
   single("examples/textures/noise_field.asm", noiseField, {

@@ -38,15 +38,15 @@ describe("template projects", () => {
     expect(life.settings.buffers?.[0]?.file).toBe("examples/buffers/life_buffer.asm");
   });
 
-  test("keeps pixelated planet step budget without forcing a size", () => {
+  test("lets pixelated planet use default render settings", () => {
     const pixelated = makeTemplateProject(
       templateProjects.find((template) => template.id === "examples/raymarch/pixelated_planet.asm")!
     );
 
     expect(pixelated.settings.size).toBe("gb");
     expect(pixelated.settings.scale).toBe(4);
-    expect(pixelated.settings.maxSteps).toBe(16384);
-    expect(pixelated.settings.wgsl).toContain("steps >= 16384");
+    expect(pixelated.settings.maxSteps).toBe(4096);
+    expect(pixelated.settings.wgsl).toContain("steps >= 4096");
   });
 
   test("preloads useful channel assets for media templates", () => {
