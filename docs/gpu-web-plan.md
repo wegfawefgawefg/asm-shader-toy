@@ -48,6 +48,7 @@ is an accelerating backend for programs that fit the validated subset.
   channel textures. Browser feedback buffers can be assigned from project files
   and are rendered with ping-pong textures before the final image pass. The
   browser preview supports pause, reset, FPS display, and PNG frame export.
+  ASM and WGSL edits hot-compile after a short debounce.
   Image/noise channels are preserved in project bundles; webcam, microphone,
   audio, and video channels preserve metadata and reconnect through browser
   permission or file selection. Native WebGPU execution is still unimplemented.
@@ -153,7 +154,7 @@ Language features to support:
 Runtime/editor features to support:
 
 - multi-file project tree with a selected entrypoint
-- hot compile on edit
+- hot compile on edit. Done in the browser prototype.
 - diagnostics with source file and line information
 - pause, reset, FPS, and size presets
 - image upload/drop for channels

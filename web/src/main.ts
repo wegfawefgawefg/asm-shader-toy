@@ -294,6 +294,17 @@ function saveCurrentFile(): void {
 let gpuContext = await initWebGpu(canvas);
 let program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
 statusText.textContent = "WebGPU ready";
+let compileTimer: number | undefined;
+
+function scheduleCompile(task: () => Promise<void>): void {
+  if (compileTimer !== undefined) {
+    window.clearTimeout(compileTimer);
+  }
+  compileTimer = window.setTimeout(() => {
+    compileTimer = undefined;
+    void task();
+  }, 350);
+}
 
 async function compileWgsl(): Promise<void> {
   saveCurrentFile();
@@ -589,6 +600,7 @@ appRoot.addEventListener("input", (event) => {
   }
   if (target === asmEditor || target === wgslEditor) {
     saveCurrentFile();
+    scheduleCompile(target === asmEditor ? compileAsm : compileWgsl);
   }
   if (target === sizeSelect) {
     state.project.settings.size = sizeSelect.value as ProjectBundle["settings"]["size"];
@@ -601,10 +613,12 @@ appRoot.addEventListener("input", (event) => {
   }
   if (target === mainSelect) {
     state.project.settings.main = mainSelect.value;
+    scheduleCompile(compileAsm);
   }
   if (target instanceof HTMLSelectElement && target.dataset.buffer !== undefined) {
     const index = Number(target.dataset.buffer);
     bufferSettings()[index] = target.value ? { file: target.value, wgsl: "" } : null;
+    scheduleCompile(compileAsm);
   }
 });
 
