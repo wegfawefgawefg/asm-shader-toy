@@ -100,3 +100,9 @@ grep -q "channel0_texture" /tmp/asm-shader-toy-image-passthrough.wgsl
     --size 160x90 \
     --no-graphics \
     --frames 4
+
+(
+    cd "${repo_root}/web"
+    AST_NATIVE_CLI="${repo_root}/build/asm-shader-toy" npm test
+    npm run build
+)

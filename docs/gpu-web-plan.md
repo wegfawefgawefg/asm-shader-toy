@@ -27,6 +27,8 @@ is an accelerating backend for programs that fit the validated subset.
 - Frame rendering lowers once per frame, not once per pixel.
 - Core tests cover IR feature classification, invalid jump-target diagnostics,
   and CPU parity between assembled programs and lowered IR.
+- Web tests cover selected native C++ `--emit-wgsl` vs browser TypeScript WGSL
+  compiler parity fixtures when `AST_NATIVE_CLI` points at the built native CLI.
 - Initial WGSL emission exists in `include/ast/wgsl.hpp` and `src/wgsl.cpp`.
   It currently targets deterministic arithmetic, unary math, comparisons,
   direct branches, bounded program-counter loops, `tex`, `texel`, `chdim`,
@@ -179,8 +181,8 @@ Useful libraries are acceptable when they reduce risk:
 The assembler/compiler behavior must not drift from native. Either share the
 compiler implementation, compile the C++ assembler to WASM, or keep a
 TypeScript implementation covered by the same golden tests as the C++ assembler.
-For velocity, a TypeScript compiler prototype is acceptable only if parity tests
-are added early.
+For velocity, the browser currently uses a TypeScript compiler prototype with
+native-vs-browser WGSL parity fixtures in `web/src/nativeParity.test.ts`.
 
 ## Hard Parts
 

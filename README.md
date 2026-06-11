@@ -34,6 +34,9 @@ Validate every checked-in example without opening a window:
 ./scripts/validate_examples.sh
 ```
 
+This also runs the browser tests/build with native-vs-browser WGSL compiler
+parity fixtures enabled.
+
 Build the browser prototype:
 
 ```sh
