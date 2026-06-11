@@ -80,7 +80,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 }
 `;
 
-const uniformFloatCount = 14 + 16 + 512 + 8 + 4 + 32 + 16;
+const uniformChannelOffset = 16;
+const uniformFloatCount = uniformChannelOffset + 16 + 512 + 8 + 4 + 32 + 16;
 const uniformByteSize = uniformFloatCount * 4;
 
 export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext> {
@@ -162,7 +163,7 @@ function writeUniforms(
     const metadata = settings.channels[channel] ?? { width: 1, height: 1 };
     const source = channelSources.get(channel);
     const buffer = settings.buffers?.[channel];
-    const offset = 14 + channel * 4;
+    const offset = uniformChannelOffset + channel * 4;
     values[offset] = buffer?.wgsl ? size.width : metadata.width || 1;
     values[offset + 1] = buffer?.wgsl ? size.height : metadata.height || 1;
     values[offset + 2] =

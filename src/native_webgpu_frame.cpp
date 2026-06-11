@@ -5,6 +5,9 @@
 #include "ast/runtime.hpp"
 #include "ast/wgsl.hpp"
 
+#include <SDL.h>
+#include <SDL_image.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -21,7 +24,8 @@
 
 namespace {
 
-constexpr std::uint64_t uniform_float_count = 14 + 16 + 512 + 8 + 4 + 32 + 16;
+constexpr std::uint64_t uniform_channel_offset = 16;
+constexpr std::uint64_t uniform_float_count = uniform_channel_offset + 16 + 512 + 8 + 4 + 32 + 16;
 constexpr std::uint64_t uniform_payload_byte_size = uniform_float_count * sizeof(float);
 constexpr std::uint64_t uniform_byte_size = (uniform_payload_byte_size + 15U) & ~std::uint64_t{15};
 
@@ -36,6 +40,7 @@ struct Args {
     int max_steps = 4096;
     bool compare_cpu = false;
     int tolerance = 1;
+    std::array<std::string, 4> channel_paths;
 };
 
 struct SizePreset {
@@ -105,7 +110,8 @@ std::optional<std::pair<int, int>> parse_size(std::string_view text) {
 void print_usage() {
     std::cerr
         << "usage: ast-webgpu-frame program.asm --output frame.ppm [--size gba|240x160]\n"
-        << "       [--frame N] [--time seconds] [--max-steps N] [--compare-cpu]\n";
+        << "       [--frame N] [--time seconds] [--max-steps N] [--compare-cpu]\n"
+        << "       [--channel0 path] through [--channel3 path] load image inputs\n";
 }
 
 std::optional<Args> parse_args(int argc, char** argv) {
@@ -197,6 +203,16 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--channel0" || arg == "--channel1" || arg == "--channel2" ||
+            arg == "--channel3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int channel = static_cast<int>(arg.back() - '0');
+            args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
+            continue;
+        }
         if (!arg.empty() && arg.front() != '-' && args.program_path.empty()) {
             args.program_path = std::string{arg};
             continue;
@@ -208,6 +224,55 @@ std::optional<Args> parse_args(int argc, char** argv) {
         return std::nullopt;
     }
     return args;
+}
+
+std::uint32_t align_to(std::uint32_t value, std::uint32_t alignment) {
+    return ((value + alignment - 1U) / alignment) * alignment;
+}
+
+bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
+    SDL_Surface* loaded = IMG_Load(path.c_str());
+    if (loaded == nullptr) {
+        std::cerr << "IMG_Load failed for " << path << ": " << IMG_GetError() << '\n';
+        return false;
+    }
+
+    SDL_Surface* converted = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_ABGR8888, 0);
+    SDL_FreeSurface(loaded);
+    if (converted == nullptr) {
+        std::cerr << "SDL_ConvertSurfaceFormat failed for " << path << ": " << SDL_GetError()
+                  << '\n';
+        return false;
+    }
+
+    out.width = converted->w;
+    out.height = converted->h;
+    out.time = 0.0F;
+    out.sample_rate = 0.0F;
+    out.external_pixels = nullptr;
+    out.pixels.resize(static_cast<std::size_t>(out.width * out.height));
+    const auto* bytes = static_cast<const std::uint8_t*>(converted->pixels);
+    for (int y = 0; y < out.height; ++y) {
+        const auto* row = reinterpret_cast<const std::uint32_t*>(
+            bytes + static_cast<std::size_t>(y) * static_cast<std::size_t>(converted->pitch));
+        for (int x = 0; x < out.width; ++x) {
+            out.pixels[static_cast<std::size_t>(y * out.width + x)] =
+                row[static_cast<std::size_t>(x)];
+        }
+    }
+
+    SDL_FreeSurface(converted);
+    return true;
+}
+
+bool load_channels(const Args& args, ast::ChannelSet& channels) {
+    for (std::size_t i = 0; i < args.channel_paths.size(); ++i) {
+        if (!args.channel_paths[i].empty() &&
+            !load_channel_image(args.channel_paths[i], channels.image[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 wgpu::ShaderModule make_shader_module(wgpu::Device device, const char* source) {
@@ -287,6 +352,44 @@ wgpu::Texture make_empty_channel_texture(WebGpuContext& context) {
     return texture;
 }
 
+wgpu::Texture make_channel_texture(WebGpuContext& context, const ast::ImageChannel& channel) {
+    if (!channel.loaded()) {
+        return make_empty_channel_texture(context);
+    }
+
+    wgpu::TextureDescriptor descriptor{wgpu::Default};
+    descriptor.size = wgpu::Extent3D(static_cast<std::uint32_t>(channel.width),
+                                     static_cast<std::uint32_t>(channel.height), 1);
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+    wgpu::Texture texture = context.device.createTexture(descriptor);
+
+    constexpr std::uint32_t bytes_per_row_alignment = 256;
+    const std::uint32_t unpadded_bytes_per_row =
+        static_cast<std::uint32_t>(channel.width) * 4U;
+    const std::uint32_t bytes_per_row =
+        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    std::vector<std::uint8_t> padded(
+        static_cast<std::size_t>(bytes_per_row) * static_cast<std::size_t>(channel.height));
+    const std::vector<std::uint32_t>& pixels = channel.pixel_data();
+    for (int y = 0; y < channel.height; ++y) {
+        std::uint8_t* dst = padded.data() + static_cast<std::size_t>(y) * bytes_per_row;
+        const auto* src = reinterpret_cast<const std::uint8_t*>(
+            pixels.data() + static_cast<std::size_t>(y * channel.width));
+        std::memcpy(dst, src, static_cast<std::size_t>(unpadded_bytes_per_row));
+    }
+
+    wgpu::ImageCopyTexture destination{};
+    destination.texture = texture;
+    wgpu::TextureDataLayout layout{};
+    layout.bytesPerRow = bytes_per_row;
+    layout.rowsPerImage = static_cast<std::uint32_t>(channel.height);
+    context.queue.writeTexture(destination, padded.data(), padded.size(), layout,
+                               wgpu::Extent3D(static_cast<std::uint32_t>(channel.width),
+                                              static_cast<std::uint32_t>(channel.height), 1));
+    return texture;
+}
+
 wgpu::BindGroupLayout make_asm_bind_group_layout(wgpu::Device device) {
     std::array<wgpu::BindGroupLayoutEntry, 6> entries{};
     entries[0].binding = 0;
@@ -313,7 +416,7 @@ wgpu::BindGroupLayout make_asm_bind_group_layout(wgpu::Device device) {
     return device.createBindGroupLayout(descriptor);
 }
 
-std::vector<float> make_uniforms(const Args& args) {
+std::vector<float> make_uniforms(const Args& args, const ast::ChannelSet& channels) {
     std::vector<float> values(static_cast<std::size_t>(uniform_float_count), 0.0F);
     values[0] = args.time;
     values[1] = args.time_delta;
@@ -323,11 +426,22 @@ std::vector<float> make_uniforms(const Args& args) {
     values[13] = 1970.0F;
     values[14] = 1.0F;
     values[15] = 1.0F;
+    for (std::size_t i = 0; i < channels.image.size(); ++i) {
+        const ast::ImageChannel& channel = channels.image[i];
+        if (!channel.loaded()) {
+            continue;
+        }
+        const std::size_t offset = static_cast<std::size_t>(uniform_channel_offset) + i * 4U;
+        values[offset + 0U] = static_cast<float>(channel.width);
+        values[offset + 1U] = static_cast<float>(channel.height);
+        values[offset + 2U] = channel.time;
+        values[offset + 3U] = channel.sample_rate;
+    }
     return values;
 }
 
 std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Program& program,
-                                           const Args& args) {
+                                           const Args& args, const ast::ChannelSet& channel_set) {
     const ast::WgslCompileResult compiled =
         ast::compile_wgsl(program, ast::WgslOptions{args.max_steps, 32});
     if (!compiled.ok()) {
@@ -351,14 +465,14 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     uniform_descriptor.size = uniform_byte_size;
     uniform_descriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     wgpu::Buffer uniform = context.device.createBuffer(uniform_descriptor);
-    const std::vector<float> uniforms = make_uniforms(args);
+    const std::vector<float> uniforms = make_uniforms(args, channel_set);
     context.queue.writeBuffer(uniform, 0, uniforms.data(), uniform_payload_byte_size);
 
     std::array<wgpu::Texture, 4> channels{
-        make_empty_channel_texture(context),
-        make_empty_channel_texture(context),
-        make_empty_channel_texture(context),
-        make_empty_channel_texture(context),
+        make_channel_texture(context, channel_set.image[0]),
+        make_channel_texture(context, channel_set.image[1]),
+        make_channel_texture(context, channel_set.image[2]),
+        make_channel_texture(context, channel_set.image[3]),
     };
     std::array<wgpu::TextureView, 4> channel_views{
         channels[0].createView(),
@@ -409,8 +523,7 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     constexpr std::uint32_t bytes_per_row_alignment = 256;
     const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(args.width) * 4U;
     const std::uint32_t bytes_per_row =
-        ((unpadded_bytes_per_row + bytes_per_row_alignment - 1U) / bytes_per_row_alignment) *
-        bytes_per_row_alignment;
+        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
     const std::uint64_t readback_size =
         static_cast<std::uint64_t>(bytes_per_row) * static_cast<std::uint64_t>(args.height);
     wgpu::BufferDescriptor readback_descriptor{};
@@ -476,7 +589,8 @@ bool write_ppm(const std::string& path, int width, int height,
     return static_cast<bool>(out);
 }
 
-std::vector<std::uint8_t> render_cpu_frame(const ast::Program& program, const Args& args) {
+std::vector<std::uint8_t> render_cpu_frame(const ast::Program& program, const Args& args,
+                                           const ast::ChannelSet& channels) {
     ast::FrameInputs inputs;
     inputs.width = args.width;
     inputs.height = args.height;
@@ -486,6 +600,7 @@ std::vector<std::uint8_t> render_cpu_frame(const ast::Program& program, const Ar
     inputs.year = 1970;
     inputs.month = 1;
     inputs.day = 1;
+    inputs.channels = &channels;
 
     std::vector<std::uint32_t> packed;
     ast::render_frame(program, inputs, packed, ast::RunLimits{args.max_steps, 32});
@@ -559,8 +674,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (SDL_Init(SDL_INIT_TIMER) != 0) {
+        std::cerr << "SDL_Init failed: " << SDL_GetError() << '\n';
+        return 1;
+    }
+    if (IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG) == 0) {
+        std::cerr << "IMG_Init failed: " << IMG_GetError() << '\n';
+        SDL_Quit();
+        return 1;
+    }
+
+    ast::ChannelSet channels;
+    if (!load_channels(args, channels)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
     WebGpuContext context;
     if (!make_context(context)) {
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
@@ -570,23 +704,32 @@ int main(int argc, char** argv) {
                       << (message != nullptr ? message : "<no message>") << '\n';
         });
 
-    const std::vector<std::uint8_t> gpu = render_gpu_frame(context, assembled.program, args);
+    const std::vector<std::uint8_t> gpu =
+        render_gpu_frame(context, assembled.program, args, channels);
     if (gpu.empty()) {
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
     if (args.compare_cpu) {
-        const std::vector<std::uint8_t> cpu = render_cpu_frame(assembled.program, args);
+        const std::vector<std::uint8_t> cpu = render_cpu_frame(assembled.program, args, channels);
         if (!compare_frames(gpu, cpu, args.tolerance)) {
+            IMG_Quit();
+            SDL_Quit();
             return 1;
         }
     }
 
     if (!args.output_path.empty() && !write_ppm(args.output_path, args.width, args.height, gpu)) {
+        IMG_Quit();
+        SDL_Quit();
         return 1;
     }
 
     (void)error_callback;
+    IMG_Quit();
+    SDL_Quit();
     std::cout << "ok: rendered GPU frame";
     if (!args.output_path.empty()) {
         std::cout << " to " << args.output_path;

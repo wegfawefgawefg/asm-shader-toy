@@ -121,6 +121,42 @@ endif()
 if(AST_BUILD_NATIVE_WEBGPU)
     include(FetchContent)
 
+    find_package(SDL2 CONFIG QUIET)
+    if(TARGET SDL2::SDL2)
+        set(AST_WEBGPU_SDL2_TARGET SDL2::SDL2)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(SDL2_WEBGPU_PC QUIET IMPORTED_TARGET sdl2)
+            if(TARGET PkgConfig::SDL2_WEBGPU_PC)
+                set(AST_WEBGPU_SDL2_TARGET PkgConfig::SDL2_WEBGPU_PC)
+            endif()
+        endif()
+    endif()
+
+    if(NOT AST_WEBGPU_SDL2_TARGET)
+        message(FATAL_ERROR "SDL2 not found. Install libsdl2-dev or provide SDL2 via CMake/pkg-config.")
+    endif()
+
+    find_package(SDL2_image CONFIG QUIET)
+    if(TARGET SDL2_image::SDL2_image)
+        set(AST_WEBGPU_SDL2_IMAGE_TARGET SDL2_image::SDL2_image)
+    elseif(TARGET SDL2_image::SDL2_image-static)
+        set(AST_WEBGPU_SDL2_IMAGE_TARGET SDL2_image::SDL2_image-static)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(SDL2_IMAGE_WEBGPU_PC QUIET IMPORTED_TARGET SDL2_image)
+            if(TARGET PkgConfig::SDL2_IMAGE_WEBGPU_PC)
+                set(AST_WEBGPU_SDL2_IMAGE_TARGET PkgConfig::SDL2_IMAGE_WEBGPU_PC)
+            endif()
+        endif()
+    endif()
+
+    if(NOT AST_WEBGPU_SDL2_IMAGE_TARGET)
+        message(FATAL_ERROR "SDL2_image not found. Install libsdl2-image-dev or provide SDL2_image.")
+    endif()
+
     set(WEBGPU_BACKEND "${AST_WEBGPU_BACKEND}" CACHE STRING "WebGPU-distribution backend" FORCE)
     set(WEBGPU_BUILD_FROM_SOURCE OFF CACHE BOOL "Use prebuilt WebGPU implementation when available" FORCE)
     set(WEBGPU_LINK_TYPE SHARED CACHE STRING "WebGPU implementation link type" FORCE)
@@ -138,7 +174,12 @@ if(AST_BUILD_NATIVE_WEBGPU)
     ast_apply_warnings(ast-webgpu-probe)
 
     add_executable(ast-webgpu-frame src/native_webgpu_frame.cpp)
-    target_link_libraries(ast-webgpu-frame PRIVATE ast::core webgpu)
+    target_link_libraries(ast-webgpu-frame PRIVATE
+        ast::core
+        webgpu
+        ${AST_WEBGPU_SDL2_TARGET}
+        ${AST_WEBGPU_SDL2_IMAGE_TARGET}
+    )
     target_compile_features(ast-webgpu-frame PRIVATE cxx_std_20)
     ast_apply_warnings(ast-webgpu-frame)
 

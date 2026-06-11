@@ -36,7 +36,8 @@ out uv_x, uv_y, 0.25, 1.0
 
 constexpr std::uint32_t probe_width = 4;
 constexpr std::uint32_t probe_height = 4;
-constexpr std::uint64_t uniform_float_count = 14 + 16 + 512 + 8 + 4 + 32 + 16;
+constexpr std::uint64_t uniform_channel_offset = 16;
+constexpr std::uint64_t uniform_float_count = uniform_channel_offset + 16 + 512 + 8 + 4 + 32 + 16;
 constexpr std::uint64_t uniform_payload_byte_size = uniform_float_count * sizeof(float);
 constexpr std::uint64_t uniform_byte_size = (uniform_payload_byte_size + 15) & ~std::uint64_t{15};
 
@@ -206,7 +207,7 @@ std::vector<float> make_uniforms() {
     values[4] = static_cast<float>(probe_height);
     values[13] = 1.0F;
     for (std::size_t channel = 0; channel < 4; ++channel) {
-        const std::size_t offset = 14 + channel * 4;
+        const std::size_t offset = static_cast<std::size_t>(uniform_channel_offset) + channel * 4;
         values[offset] = 1.0F;
         values[offset + 1] = 1.0F;
     }

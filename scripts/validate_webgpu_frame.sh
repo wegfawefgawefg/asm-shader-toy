@@ -49,3 +49,16 @@ run_case "planet_sphere" \
     --time 0.5 \
     --frame 30 \
     --tolerance 2
+
+run_case "image_passthrough" \
+    "${repo_root}/examples/textures/image_passthrough.asm" \
+    --size 64x64 \
+    --channel0 "${repo_root}/examples/assets/checker.png"
+
+run_case "multi_image_mix" \
+    "${repo_root}/examples/textures/multi_image_mix.asm" \
+    --size 64x64 \
+    --channel0 "${repo_root}/examples/assets/checker.png" \
+    --channel1 "${repo_root}/examples/assets/bars.png" \
+    --time 0.75 \
+    --frame 45
