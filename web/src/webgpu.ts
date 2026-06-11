@@ -8,6 +8,8 @@ export type GpuContext = {
   format: GPUTextureFormat;
   sampler: GPUSampler;
   renderPipeline: GPURenderPipeline;
+  computeBindGroupLayout: GPUBindGroupLayout;
+  computePipelineLayout: GPUPipelineLayout;
   errors: string[];
 };
 
@@ -128,6 +130,26 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
     minFilter: "nearest",
     mipmapFilter: "nearest"
   });
+  const computeBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: "write-only", format: "rgba8unorm", viewDimension: "2d" }
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "uniform" }
+      },
+      ...[2, 3, 4, 5].map((binding) => ({
+        binding,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: "float" as GPUTextureSampleType, viewDimension: "2d" as GPUTextureViewDimension }
+      }))
+    ]
+  });
+  const computePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] });
 
   const renderModule = device.createShaderModule({ code: renderShader });
   const renderPipeline = device.createRenderPipeline({
@@ -137,7 +159,7 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
     primitive: { topology: "triangle-list" }
   });
 
-  return { device, adapterLabel, canvasContext, format, sampler, renderPipeline, errors };
+  return { device, adapterLabel, canvasContext, format, sampler, renderPipeline, computeBindGroupLayout, computePipelineLayout, errors };
 }
 
 function makeFallbackTexture(device: GPUDevice): GPUTexture {
@@ -268,7 +290,7 @@ export async function createProgram(
   const size = parseSize(settings.size);
   const module = device.createShaderModule({ code: source });
   const computePipeline = await device.createComputePipelineAsync({
-    layout: "auto",
+    layout: context.computePipelineLayout,
     compute: { module, entryPoint: "main" }
   });
   const outputTexture = makeOutputTexture(device, size.width, size.height);
@@ -302,7 +324,7 @@ export async function createProgram(
       }
       const bufferModule = device.createShaderModule({ code: buffer.wgsl });
       const bufferPipeline = await device.createComputePipelineAsync({
-        layout: "auto",
+        layout: context.computePipelineLayout,
         compute: { module: bufferModule, entryPoint: "main" }
       });
       const first = makeOutputTexture(device, size.width, size.height);
@@ -444,7 +466,7 @@ export function renderFrame(
   const encoder = device.createCommandEncoder();
   for (const buffer of program.bufferPasses) {
     const bindGroup = device.createBindGroup({
-      layout: buffer.computePipeline.getBindGroupLayout(0),
+      layout: context.computeBindGroupLayout,
       entries: [
         { binding: 0, resource: buffer.views[writeIndex] },
         { binding: 1, resource: { buffer: program.uniformBuffer } },
@@ -458,7 +480,7 @@ export function renderFrame(
     pass.end();
   }
   const imageBindGroup = device.createBindGroup({
-    layout: program.computePipeline.getBindGroupLayout(0),
+    layout: context.computeBindGroupLayout,
     entries: [
       { binding: 0, resource: program.outputView },
       { binding: 1, resource: { buffer: program.uniformBuffer } },
