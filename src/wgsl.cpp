@@ -141,15 +141,15 @@ bool supported_op(Op op) {
     case Op::Chdim:
     case Op::Chtime:
     case Op::Chsrate:
-    case Op::Ret:
-    case Op::Halt:
-        return true;
-    case Op::Call:
     case Op::Key:
     case Op::Mbtn:
     case Op::Mwheel:
     case Op::Gbtn:
     case Op::Gaxis:
+    case Op::Ret:
+    case Op::Halt:
+        return true;
+    case Op::Call:
         return false;
     }
     return false;
@@ -207,6 +207,11 @@ void emit_header(std::ostringstream& out, const WgslOptions& options) {
            "    channel1: vec4<f32>,\n"
            "    channel2: vec4<f32>,\n"
            "    channel3: vec4<f32>,\n"
+           "    keys: array<vec4<f32>, 128>,\n"
+           "    mouse_buttons: array<vec4<f32>, 2>,\n"
+           "    mouse_wheel: vec4<f32>,\n"
+           "    gamepad_buttons: array<vec4<f32>, 8>,\n"
+           "    gamepad_axes: array<vec4<f32>, 4>,\n"
            "};\n\n"
            "@group(0) @binding(0) var output_texture: texture_storage_2d<rgba8unorm, write>;\n"
            "@group(0) @binding(1) var<uniform> ast_inputs: AstInputs;\n\n"
@@ -252,6 +257,47 @@ void emit_header(std::ostringstream& out, const WgslOptions& options) {
            "    case 3: { return textureLoad(channel3_texture, coord, 0); }\n"
            "    default: { return vec4<f32>(0.0); }\n"
            "    }\n"
+           "}\n\n"
+           "fn ast_packed_vec4_read(value: vec4<f32>, lane: i32) -> f32 {\n"
+           "    switch (lane) {\n"
+           "    case 0: { return value.x; }\n"
+           "    case 1: { return value.y; }\n"
+           "    case 2: { return value.z; }\n"
+           "    case 3: { return value.w; }\n"
+           "    default: { return 0.0; }\n"
+           "    }\n"
+           "}\n\n"
+           "fn ast_key_state(scancode: i32) -> f32 {\n"
+           "    if (scancode < 0 || scancode >= 512) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    let bucket = scancode / 4;\n"
+           "    let lane = scancode - bucket * 4;\n"
+           "    return ast_packed_vec4_read(ast_inputs.keys[bucket], lane);\n"
+           "}\n\n"
+           "fn ast_mouse_button_state(button: i32) -> f32 {\n"
+           "    if (button < 0 || button >= 8) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    let bucket = button / 4;\n"
+           "    let lane = button - bucket * 4;\n"
+           "    return ast_packed_vec4_read(ast_inputs.mouse_buttons[bucket], lane);\n"
+           "}\n\n"
+           "fn ast_gamepad_button_state(button: i32) -> f32 {\n"
+           "    if (button < 0 || button >= 32) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    let bucket = button / 4;\n"
+           "    let lane = button - bucket * 4;\n"
+           "    return ast_packed_vec4_read(ast_inputs.gamepad_buttons[bucket], lane);\n"
+           "}\n\n"
+           "fn ast_gamepad_axis_state(axis: i32) -> f32 {\n"
+           "    if (axis < 0 || axis >= 16) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    let bucket = axis / 4;\n"
+           "    let lane = axis - bucket * 4;\n"
+           "    return ast_packed_vec4_read(ast_inputs.gamepad_axes[bucket], lane);\n"
            "}\n\n"
            "@compute @workgroup_size(8, 8, 1)\n"
            "fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
@@ -556,16 +602,39 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << '\n'
             << "            pc = " << next_pc(pc) << ";\n";
         break;
+    case Op::Key:
+        out << "            "
+            << write_register(o[0], "ast_key_state(i32(" + read_operand(o[1]) + "))") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Mbtn:
+        out << "            "
+            << write_register(o[0], "ast_mouse_button_state(i32(" + read_operand(o[1]) + "))")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Mwheel:
+        out << "            " << write_register(o[0], "ast_inputs.mouse_wheel.x") << '\n'
+            << "            " << write_register(o[1], "ast_inputs.mouse_wheel.y") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Gbtn:
+        out << "            "
+            << write_register(o[0], "ast_gamepad_button_state(i32(" + read_operand(o[1]) + "))")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Gaxis:
+        out << "            "
+            << write_register(o[0], "ast_gamepad_axis_state(i32(" + read_operand(o[1]) + "))")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
     case Op::Ret:
     case Op::Halt:
         out << "            pc = " << program_size << ";\n";
         break;
     case Op::Call:
-    case Op::Key:
-    case Op::Mbtn:
-    case Op::Mwheel:
-    case Op::Gbtn:
-    case Op::Gaxis:
         out << "            pc = -1;\n";
         break;
     }

@@ -30,12 +30,13 @@ is an accelerating backend for programs that fit the validated subset.
 - Initial WGSL emission exists in `include/ast/wgsl.hpp` and `src/wgsl.cpp`.
   It currently targets deterministic arithmetic, unary math, comparisons,
   direct branches, bounded program-counter loops, `tex`, `texel`, `chdim`,
-  `chtime`, `chsrate`, `out`, `out8`, `ret`, and `halt`.
+  `chtime`, `chsrate`, `key`, `mbtn`, `mwheel`, `gbtn`, `gaxis`, `out`,
+  `out8`, `ret`, and `halt`.
 - The native CLI exposes that compiler through `--emit-wgsl path|-`, which
   writes WGSL and exits before SDL/media setup.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Live input query ops, calls, native WebGPU execution, and the
-  browser runner are still unimplemented.
+  falling back. Calls, native WebGPU execution, and the browser runner are still
+  unimplemented.
 
 ## Why WGSL First
 

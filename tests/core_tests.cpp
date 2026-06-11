@@ -614,17 +614,44 @@ void test_wgsl_emits_texture_and_channel_metadata_subset() {
             "WGSL source samples channel textures");
 }
 
-void test_wgsl_reports_unsupported_ops() {
+void test_wgsl_emits_live_input_subset() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         key r16, 4
+        mbtn r17, 1
+        mwheel r18, r19
+        gbtn r20, 0
+        gaxis r21, 2
+        out8 r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "WGSL live input fixture assembles");
+    const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
+    require(wgsl.ok(), "WGSL emitter accepts live input subset");
+    require(wgsl.source.find("keys: array<vec4<f32>, 128>") != std::string::npos,
+            "WGSL source declares packed key state");
+    require(wgsl.source.find("fn ast_key_state") != std::string::npos,
+            "WGSL source declares key helper");
+    require(wgsl.source.find("ast_mouse_button_state") != std::string::npos,
+            "WGSL source declares mouse button helper");
+    require(wgsl.source.find("ast_gamepad_axis_state") != std::string::npos,
+            "WGSL source declares gamepad axis helper");
+}
+
+void test_wgsl_reports_unsupported_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        call helper
         out8 r16, 0, 0, 255
+        halt
+    helper:
+        mov r16, 255
+        ret
     )");
 
     require(result.ok(), "unsupported WGSL fixture assembles");
     const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
     require(!wgsl.ok(), "WGSL emitter rejects unsupported ops");
     require(!wgsl.diagnostics.empty(), "WGSL unsupported op has diagnostics");
-    require(wgsl.diagnostics[0].message.find("key") != std::string::npos,
+    require(wgsl.diagnostics[0].message.find("call") != std::string::npos,
             "WGSL unsupported op diagnostic names the opcode");
 }
 
@@ -778,6 +805,7 @@ int main() {
     test_cpu_runs_lowered_ir_program();
     test_wgsl_emits_arithmetic_control_and_output_subset();
     test_wgsl_emits_texture_and_channel_metadata_subset();
+    test_wgsl_emits_live_input_subset();
     test_wgsl_reports_unsupported_ops();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();

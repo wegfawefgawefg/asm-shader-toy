@@ -17,6 +17,9 @@ grep -q "@compute @workgroup_size" /tmp/asm-shader-toy-time-pulse.wgsl
     --audio0 examples/assets/audio/two_tone.wav \
     --dry-run
 ./build/asm-shader-toy examples/input/live_controls.asm --dry-run
+./build/asm-shader-toy examples/input/live_controls.asm \
+    --emit-wgsl /tmp/asm-shader-toy-live-controls.wgsl
+grep -q "ast_key_state" /tmp/asm-shader-toy-live-controls.wgsl
 ./build/asm-shader-toy examples/input/mouse_rings.asm --dry-run
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
