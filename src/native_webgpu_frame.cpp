@@ -41,6 +41,7 @@ struct Args {
     bool compare_cpu = false;
     int tolerance = 1;
     std::array<std::string, 4> channel_paths;
+    std::array<std::string, 4> noise_specs;
 };
 
 struct SizePreset {
@@ -111,7 +112,8 @@ void print_usage() {
     std::cerr
         << "usage: ast-webgpu-frame program.asm --output frame.ppm [--size gba|240x160]\n"
         << "       [--frame N] [--time seconds] [--max-steps N] [--compare-cpu]\n"
-        << "       [--channel0 path] through [--channel3 path] load image inputs\n";
+        << "       [--channel0 path] through [--channel3 path] load image inputs\n"
+        << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n";
 }
 
 std::optional<Args> parse_args(int argc, char** argv) {
@@ -213,6 +215,20 @@ std::optional<Args> parse_args(int argc, char** argv) {
             args.channel_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--noise0" || arg == "--noise1" || arg == "--noise2" ||
+            arg == "--noise3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string seed = std::to_string(channel + 1);
+            if (i + 1 < argc) {
+                const std::string_view possible_seed{argv[i + 1]};
+                if (possible_seed.empty() || possible_seed.front() != '-') {
+                    ++i;
+                    seed = std::string{possible_seed};
+                }
+            }
+            args.noise_specs[static_cast<std::size_t>(channel)] = std::move(seed);
+            continue;
+        }
         if (!arg.empty() && arg.front() != '-' && args.program_path.empty()) {
             args.program_path = std::string{arg};
             continue;
@@ -228,6 +244,30 @@ std::optional<Args> parse_args(int argc, char** argv) {
 
 std::uint32_t align_to(std::uint32_t value, std::uint32_t alignment) {
     return ((value + alignment - 1U) / alignment) * alignment;
+}
+
+std::uint32_t pack_rgba8(std::uint8_t r, std::uint8_t g, std::uint8_t b,
+                         std::uint8_t a = 255) {
+    return (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+           (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+}
+
+std::uint32_t hash_u32(std::uint32_t value) {
+    value ^= value >> 16U;
+    value *= 0x7feb352dU;
+    value ^= value >> 15U;
+    value *= 0x846ca68bU;
+    value ^= value >> 16U;
+    return value;
+}
+
+std::uint32_t seed_from_text(const std::string& text) {
+    std::uint32_t seed = 2166136261U;
+    for (unsigned char ch : text) {
+        seed ^= static_cast<std::uint32_t>(ch);
+        seed *= 16777619U;
+    }
+    return seed;
 }
 
 bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
@@ -265,11 +305,37 @@ bool load_channel_image(const std::string& path, ast::ImageChannel& out) {
     return true;
 }
 
+void load_noise_channel(const std::string& seed_text, ast::ImageChannel& out) {
+    constexpr int noise_size = 256;
+    const std::uint32_t seed = seed_from_text(seed_text);
+    out.width = noise_size;
+    out.height = noise_size;
+    out.time = 0.0F;
+    out.sample_rate = 0.0F;
+    out.external_pixels = nullptr;
+    out.pixels.resize(static_cast<std::size_t>(noise_size * noise_size));
+    for (int y = 0; y < noise_size; ++y) {
+        for (int x = 0; x < noise_size; ++x) {
+            const std::uint32_t base = seed ^ (static_cast<std::uint32_t>(x) * 374761393U) ^
+                                       (static_cast<std::uint32_t>(y) * 668265263U);
+            const std::uint8_t r = static_cast<std::uint8_t>(hash_u32(base) & 0xFFU);
+            const std::uint8_t g = static_cast<std::uint8_t>(hash_u32(base + 1U) & 0xFFU);
+            const std::uint8_t b = static_cast<std::uint8_t>(hash_u32(base + 2U) & 0xFFU);
+            out.pixels[static_cast<std::size_t>(y * noise_size + x)] = pack_rgba8(r, g, b);
+        }
+    }
+}
+
 bool load_channels(const Args& args, ast::ChannelSet& channels) {
     for (std::size_t i = 0; i < args.channel_paths.size(); ++i) {
         if (!args.channel_paths[i].empty() &&
             !load_channel_image(args.channel_paths[i], channels.image[i])) {
             return false;
+        }
+    }
+    for (std::size_t i = 0; i < args.noise_specs.size(); ++i) {
+        if (!args.noise_specs[i].empty()) {
+            load_noise_channel(args.noise_specs[i], channels.image[i]);
         }
     }
     return true;

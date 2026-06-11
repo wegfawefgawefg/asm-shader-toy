@@ -62,3 +62,10 @@ run_case "multi_image_mix" \
     --channel1 "${repo_root}/examples/assets/bars.png" \
     --time 0.75 \
     --frame 45
+
+run_case "noise_field" \
+    "${repo_root}/examples/textures/noise_field.asm" \
+    --size 64x64 \
+    --noise0 42 \
+    --time 0.5 \
+    --frame 30

@@ -67,6 +67,10 @@ Build the optional native WebGPU tools:
   --channel0 examples/assets/checker.png \
   --channel1 examples/assets/bars.png \
   --compare-cpu
+./build-webgpu-probe/ast-webgpu-frame examples/textures/noise_field.asm \
+  --size 64x64 \
+  --noise0 42 \
+  --compare-cpu
 ./scripts/validate_webgpu_frame.sh
 ```
 
@@ -74,7 +78,7 @@ The probe requests a native WebGPU adapter/device, dispatches a tiny handwritten
 compute shader, then runs a WGSL shader emitted from asm into an `rgba8unorm`
 storage texture and verifies CPU readback pixels. The frame tool renders one
 deterministic asm image pass through emitted WGSL and can compare the GPU
-readback with the CPU VM, including static image channels.
+readback with the CPU VM, including static image and generated noise channels.
 
 ## Run
 
