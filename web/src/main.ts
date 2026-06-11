@@ -190,6 +190,17 @@ for (const name of Object.keys(sizePresets)) {
   sizeSelect.append(option);
 }
 
+function syncSizeSelect(): void {
+  const size = state.project.settings.size;
+  if (!(size in sizePresets) && !Array.from(sizeSelect.options).some((option) => option.value === size)) {
+    const option = document.createElement("option");
+    option.value = size;
+    option.textContent = size;
+    sizeSelect.append(option);
+  }
+  sizeSelect.value = size;
+}
+
 for (const template of templateProjects) {
   const option = document.createElement("option");
   option.value = template.id;
@@ -269,7 +280,7 @@ function renderProjectUi(): void {
     mainSelect.append(option);
   }
   mainSelect.value = state.project.settings.main;
-  sizeSelect.value = state.project.settings.size;
+  syncSizeSelect();
   scaleInput.value = String(state.project.settings.scale);
   suppressAsmChange = true;
   setEditorText(asmEditor, currentFile().content);
@@ -708,7 +719,8 @@ async function setChannelVideoSource(
 async function compileAsm(): Promise<void> {
   saveCurrentFile();
   const diagnosticsList: string[] = [];
-  const imageResult = compileAsmToWgsl(state.project.files, state.project.settings.main);
+  const maxSteps = state.project.settings.maxSteps ?? 4096;
+  const imageResult = compileAsmToWgsl(state.project.files, state.project.settings.main, maxSteps);
   diagnosticsList.push(
     ...imageResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
   );
@@ -716,7 +728,7 @@ async function compileAsm(): Promise<void> {
     if (!buffer) {
       continue;
     }
-    const result = compileAsmToWgsl(state.project.files, buffer.file);
+    const result = compileAsmToWgsl(state.project.files, buffer.file, maxSteps);
     buffer.wgsl = result.wgsl;
     diagnosticsList.push(
       ...result.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)

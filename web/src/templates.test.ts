@@ -37,4 +37,15 @@ describe("template projects", () => {
     const life = makeTemplateProject(templateProjects.find((template) => template.id === "examples/buffers/life_display.asm")!);
     expect(life.settings.buffers?.[0]?.file).toBe("examples/buffers/life_buffer.asm");
   });
+
+  test("keeps pixelated planet custom render settings", () => {
+    const pixelated = makeTemplateProject(
+      templateProjects.find((template) => template.id === "examples/raymarch/pixelated_planet.asm")!
+    );
+
+    expect(pixelated.settings.size).toBe("506x632");
+    expect(pixelated.settings.scale).toBe(1);
+    expect(pixelated.settings.maxSteps).toBe(16384);
+    expect(pixelated.settings.wgsl).toContain("steps >= 16384");
+  });
 });

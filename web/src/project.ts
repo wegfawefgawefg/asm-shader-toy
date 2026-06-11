@@ -12,6 +12,7 @@ export type ProjectSettings = {
   wgsl: string;
   size: SizePreset | `${number}x${number}`;
   scale: number;
+  maxSteps?: number;
   channels: ChannelSetting[];
   buffers?: Array<BufferSetting | null>;
 };
@@ -75,6 +76,7 @@ export function makeDefaultProject(): ProjectBundle {
       wgsl: compiled.wgsl,
       size: "gb",
       scale: 4,
+      maxSteps: 4096,
       channels: [
         { kind: "fallback", name: "channel0", width: 1, height: 1 },
         { kind: "fallback", name: "channel1", width: 1, height: 1 },
@@ -114,6 +116,7 @@ export function normalizeProject(bundle: ProjectBundle): ProjectBundle {
     ...bundle,
     settings: {
       ...bundle.settings,
+      maxSteps: Math.max(1, Math.floor(bundle.settings.maxSteps ?? 4096)),
       channels: channels.slice(0, 4).map((channel, index) => normalizeChannel(channel, index)),
       buffers: buffers.slice(0, 4).map((buffer) => (buffer?.file ? { file: buffer.file, wgsl: buffer.wgsl ?? "" } : null))
     }

@@ -36,6 +36,7 @@ export type TemplateProject = {
   main: string;
   size?: ProjectBundle["settings"]["size"];
   scale?: number;
+  maxSteps?: number;
   channels?: ProjectBundle["settings"]["channels"];
   buffers?: ProjectBundle["settings"]["buffers"];
 };
@@ -106,7 +107,7 @@ export const templateProjects: TemplateProject[] = [
   },
   single("examples/perf/heavy.asm", heavy, { size: "160x160", scale: 3 }),
   single("examples/raymarch/planet_sphere.asm", planetSphere, { size: "160x160", scale: 3 }),
-  single("examples/raymarch/pixelated_planet.asm", pixelatedPlanet, { size: "506x632", scale: 1 }),
+  single("examples/raymarch/pixelated_planet.asm", pixelatedPlanet, { size: "506x632", scale: 1, maxSteps: 16384 }),
   single("examples/textures/image_passthrough.asm", imagePassthrough),
   single("examples/textures/multi_image_mix.asm", multiImageMix),
   single("examples/textures/noise_field.asm", noiseField, {
@@ -131,7 +132,7 @@ export const templateProjects: TemplateProject[] = [
 
 export function makeTemplateProject(template: TemplateProject): ProjectBundle {
   const files = template.files.map((file) => ({ ...file }));
-  const compiled = compileAsmToWgsl(files, template.main);
+  const compiled = compileAsmToWgsl(files, template.main, template.maxSteps ?? 4096);
   return normalizeProject({
     files,
     settings: {
@@ -139,6 +140,7 @@ export function makeTemplateProject(template: TemplateProject): ProjectBundle {
       wgsl: compiled.wgsl,
       size: template.size ?? "gba",
       scale: template.scale ?? 4,
+      maxSteps: template.maxSteps ?? 4096,
       channels: template.channels ?? fallbackChannels.map((channel) => ({ ...channel })),
       buffers: template.buffers ?? [null, null, null, null]
     }
