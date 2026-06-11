@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-url="${1:-http://localhost:5175/}"
+url="${1:-http://localhost:5173/}"
 browser="${AST_BROWSER:-google-chrome}"
 profile="${AST_BROWSER_PROFILE:-/tmp/asm-shader-toy-webgpu-profile}"
 

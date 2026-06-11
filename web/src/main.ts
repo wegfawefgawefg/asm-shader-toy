@@ -52,9 +52,11 @@ void main().catch((error) => {
 
 async function main(): Promise<void> {
   const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
+  const defaultTemplate = templateProjects.find((candidate) => candidate.id === "examples/basics/plasma.asm");
+  const defaultProject = defaultTemplate ? makeTemplateProject(defaultTemplate) : makeDefaultProject();
   const state: AppState = {
-    project: makeDefaultProject(),
-    selectedFile: "main.asm",
+    project: defaultProject,
+    selectedFile: defaultProject.settings.main,
     running: true,
     frame: 0,
     startSeconds: performance.now() / 1000,
