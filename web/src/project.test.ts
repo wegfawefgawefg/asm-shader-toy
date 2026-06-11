@@ -79,4 +79,24 @@ describe("project bundles", () => {
       sampleRate: 48000
     });
   });
+
+  test("preserves browser video channel metadata without serializing media blobs", () => {
+    const project = normalizeProject({
+      files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [{ kind: "video", name: "clip.mp4", width: 640, height: 360 }]
+      }
+    });
+
+    expect(project.settings.channels[0]).toMatchObject({
+      kind: "video",
+      name: "clip.mp4",
+      width: 640,
+      height: 360
+    });
+  });
 });

@@ -44,9 +44,10 @@ is an accelerating backend for programs that fit the validated subset.
   metadata ops, live input query ops, and output. Browser channel controls can
   bind static images, generated noise textures, or mirrored webcam streams to
   `channel0..3`, and can upload live microphone analyser data as a 512x2 audio
-  texture. Image/noise channels are preserved in project bundles; webcam and
-  microphone channels preserve metadata and reconnect through browser
-  permission. Audio-file channels, video, feedback buffers, and native WebGPU
+  texture, and can use user-selected video files as looping channel textures.
+  Image/noise channels are preserved in project bundles; webcam, microphone, and
+  video channels preserve metadata and reconnect through browser permission or
+  file selection. Audio-file channels, feedback buffers, and native WebGPU
   execution are still unimplemented.
 
 ## Why WGSL First
@@ -130,7 +131,8 @@ is an accelerating backend for programs that fit the validated subset.
    - webcam through `getUserMedia`. Done in the browser prototype.
    - microphone/audio analyser through Web Audio. Microphone analyser is done in
      the browser prototype; audio-file upload is still pending.
-   - video upload or URL-backed video where browser policy allows
+   - video upload or URL-backed video where browser policy allows. User-selected
+     video upload is done in the browser prototype; URL-backed video is deferred.
 
 ## Website Parity Target
 

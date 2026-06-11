@@ -22,6 +22,7 @@ type AppState = {
 
 type LiveChannelSource = ChannelRuntimeSource & {
   audioContext?: AudioContext;
+  objectUrl?: string;
   stream?: MediaStream;
 };
 
@@ -186,7 +187,16 @@ function renderChannelControls(): void {
     micButton.dataset.action = "mic-channel";
     micButton.dataset.channel = String(index);
     micButton.textContent = "Mic";
-    controls.append(seedInput, noiseButton, webcamButton, micButton);
+    const videoLabel = document.createElement("label");
+    videoLabel.className = "button channel-button";
+    videoLabel.textContent = "Vid";
+    const videoInput = document.createElement("input");
+    videoInput.className = "hidden-input";
+    videoInput.type = "file";
+    videoInput.accept = "video/mp4,video/webm,video/ogg";
+    videoInput.dataset.videoChannel = String(index);
+    videoLabel.append(videoInput);
+    controls.append(seedInput, noiseButton, webcamButton, micButton, videoLabel);
     const meta = document.createElement("div");
     meta.className = "channel-meta";
     if (channel.kind === "noise" || channel.seed) {
@@ -199,6 +209,8 @@ function renderChannelControls(): void {
       meta.textContent = channelSources.has(index)
         ? `${channel.width}x${channel.height} mic ${channel.sampleRate ?? 0}hz`
         : "microphone disconnected";
+    } else if (channel.kind === "video") {
+      meta.textContent = channelSources.has(index) ? `${channel.width}x${channel.height} ${channel.name}` : "video disconnected";
     } else if (channel.imageDataUrl) {
       meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
     } else {
@@ -257,6 +269,9 @@ function stopChannelSource(index: number): void {
     return;
   }
   source.video?.pause();
+  if (source.objectUrl) {
+    URL.revokeObjectURL(source.objectUrl);
+  }
   void source.audioContext?.close();
   source.stream?.getTracks().forEach((track) => track.stop());
   channelSources.delete(index);
@@ -355,6 +370,30 @@ async function setChannelMicrophone(index: number): Promise<void> {
   await compileWgsl();
 }
 
+async function setChannelVideo(index: number, file: File): Promise<void> {
+  stopChannelSource(index);
+  const objectUrl = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.src = objectUrl;
+  await new Promise<void>((resolve, reject) => {
+    video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+    video.addEventListener("error", () => reject(video.error ?? new Error("video failed to load")), { once: true });
+  });
+  await video.play();
+  channelSources.set(index, { video, objectUrl });
+  state.project.settings.channels[index] = {
+    kind: "video",
+    name: file.name,
+    width: Math.max(1, video.videoWidth),
+    height: Math.max(1, video.videoHeight)
+  };
+  renderChannelControls();
+  await compileWgsl();
+}
+
 
 async function compileAsm(): Promise<void> {
   saveCurrentFile();
@@ -383,6 +422,10 @@ appRoot.addEventListener("input", (event) => {
   const target = event.target;
   if (target instanceof HTMLInputElement && target.dataset.channel !== undefined && target.files?.[0]) {
     void setChannelImage(Number(target.dataset.channel), target.files[0]);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.videoChannel !== undefined && target.files?.[0]) {
+    void setChannelVideo(Number(target.dataset.videoChannel), target.files[0]);
     return;
   }
   if (target === asmEditor || target === wgslEditor) {

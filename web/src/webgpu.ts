@@ -130,7 +130,14 @@ function makeNoiseTexture(device: GPUDevice, seed: string): GPUTexture {
   return texture;
 }
 
-function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSettings, frame: number, start: number): void {
+function writeUniforms(
+  device: GPUDevice,
+  buffer: GPUBuffer,
+  settings: ProjectSettings,
+  frame: number,
+  start: number,
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource>
+): void {
   const size = parseSize(settings.size);
   const values = new Float32Array(uniformFloatCount);
   const now = performance.now() / 1000;
@@ -142,10 +149,16 @@ function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSe
   values[13] = 1;
   for (let channel = 0; channel < 4; ++channel) {
     const metadata = settings.channels[channel] ?? { width: 1, height: 1 };
+    const source = channelSources.get(channel);
     const offset = 14 + channel * 4;
     values[offset] = metadata.width || 1;
     values[offset + 1] = metadata.height || 1;
-    values[offset + 2] = metadata.kind === "webcam" || metadata.kind === "microphone" ? now - start : 0;
+    values[offset + 2] =
+      metadata.kind === "video" && source?.video
+        ? source.video.currentTime
+        : metadata.kind === "webcam" || metadata.kind === "microphone"
+          ? now - start
+          : 0;
     values[offset + 3] = metadata.sampleRate ?? 0;
   }
   device.queue.writeBuffer(buffer, 0, values);
@@ -349,7 +362,7 @@ export function renderFrame(
   const { device } = context;
   const size = parseSize(settings.size);
   updateLiveChannelTextures(context, program, channelSources);
-  writeUniforms(device, program.uniformBuffer, settings, frame, start);
+  writeUniforms(device, program.uniformBuffer, settings, frame, start, channelSources);
 
   const renderBindGroup = device.createBindGroup({
     layout: context.renderPipeline.getBindGroupLayout(0),
