@@ -12,4 +12,5 @@ compile_commands.json
 *.dll
 *.exe
 *.out
-
+web/node_modules/
+web/dist/

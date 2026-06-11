@@ -34,6 +34,14 @@ Validate every checked-in example without opening a window:
 ./scripts/validate_examples.sh
 ```
 
+Build the browser prototype:
+
+```sh
+cd web
+npm install
+npm run build
+```
+
 ## Run
 
 Default demo:
@@ -56,6 +64,26 @@ Specific examples:
 Graphical runs hot reload the active program and any `.include` dependencies on
 save. If a reload has assembly errors, diagnostics are printed and the last good
 program keeps running.
+
+## Browser Prototype
+
+The `web/` app is the first WebGPU/browser slice. It has a multi-file project
+editor, WGSL editor, import/export JSON, compressed share URLs, and a WebGPU
+preview canvas with nearest-neighbor scaling.
+
+Run it locally:
+
+```sh
+cd web
+npm run dev
+```
+
+Browser-side asm compilation is not wired yet. Use the native CLI to emit WGSL,
+then paste it into the WGSL panel:
+
+```sh
+./build/asm-shader-toy examples/basics/time_pulse.asm --emit-wgsl -
+```
 
 Useful app controls:
 

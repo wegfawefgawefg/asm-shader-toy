@@ -37,6 +37,11 @@ is an accelerating backend for programs that fit the validated subset.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
   falling back. Native WebGPU execution and the browser runner are still
   unimplemented.
+- A browser app scaffold exists under `web/`. It can edit a multi-file project,
+  import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
+  that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
+  compilation, media channels, feedback buffers, and native WebGPU execution are
+  still unimplemented.
 
 ## Why WGSL First
 
