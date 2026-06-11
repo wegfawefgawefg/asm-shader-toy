@@ -26,12 +26,15 @@ for the first version because the useful learning surface is:
 - inspecting the language and VM behavior
 - later adding stepping for one chosen pixel
 
-The first optimization targets should be:
+The first optimization targets were:
 
 - frame tiling and worker threads
 - bytecode validation to simplify runtime checks
 - SIMD batches where one VM register stores multiple pixel lanes
 - optional native or GPU backend only after the language settles
+
+The language is now settled enough to plan a GPU/Web backend. See
+[gpu-web-plan.md](gpu-web-plan.md) for the proposed WGSL/WebGPU direction.
 
 ## Non-Goals For Now
 
@@ -39,7 +42,6 @@ The first optimization targets should be:
 - Arbitrary memory writes.
 - Dynamic indirect jumps.
 - Unbounded programs.
-- GPU shader generation.
 - Cubemap channel input.
 - A polished editor UI.
 
