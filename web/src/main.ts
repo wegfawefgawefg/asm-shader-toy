@@ -1,5 +1,5 @@
 import "./styles.css";
-import { createAsmEditor, setEditorText } from "./asmEditor";
+import { createAsmEditor, createWgslEditor, setEditorText } from "./asmEditor";
 import { compileAsmToWgsl } from "./compiler";
 import {
   decodeProject,
@@ -26,6 +26,7 @@ type AppState = {
   project: ProjectBundle;
   selectedFile: string;
   running: boolean;
+  showWgsl: boolean;
   frame: number;
   startSeconds: number;
   fps: number;
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
     project: defaultProject,
     selectedFile: defaultProject.settings.main,
     running: true,
+    showWgsl: false,
     frame: 0,
     startSeconds: performance.now() / 1000,
     fps: 0,
@@ -82,22 +84,31 @@ appRoot.innerHTML = `
   <main class="shell">
     <aside class="sidebar">
       <div class="brand">ASM Shader Toy</div>
-      <div class="file-list"></div>
-      <button class="button" data-action="add-file">New File</button>
-      <button class="button" data-action="export">Export JSON</button>
-      <label class="button file-button">
-        Import JSON
-        <input class="hidden-input" type="file" accept="application/json" data-import />
-      </label>
-      <button class="button" data-action="share">Copy Share URL</button>
-      <label class="template-picker">
-        <span class="section-title">Templates</span>
-        <select data-template>
-          <option value="">Choose template...</option>
-        </select>
-      </label>
-      <div class="buffer-list" data-buffers></div>
-      <div class="channel-list" data-channels></div>
+      <section class="sidebar-section">
+        <div class="section-title">Files</div>
+        <div class="file-list"></div>
+      </section>
+      <section class="sidebar-section">
+        <label class="template-picker">
+          <span class="section-title">Templates</span>
+          <select data-template>
+            <option value="">Choose template...</option>
+          </select>
+        </label>
+        <div class="action-grid">
+          <button class="button" data-action="add-file">New</button>
+          <button class="button" data-action="export">Export</button>
+          <label class="button file-button">
+            Import
+            <input class="hidden-input" type="file" accept="application/json" data-import />
+          </label>
+          <button class="button" data-action="share">Share</button>
+        </div>
+      </section>
+      <div class="sidebar-scroll">
+        <div class="buffer-list" data-buffers></div>
+        <div class="channel-list" data-channels></div>
+      </div>
     </aside>
     <section class="editor-pane">
       <div class="toolbar">
@@ -109,16 +120,17 @@ appRoot.innerHTML = `
         <button class="button" data-action="pause">Pause</button>
         <button class="button" data-action="reset">Reset</button>
         <button class="button" data-action="save-frame">Save Frame</button>
+        <button class="button" data-action="toggle-wgsl">WGSL</button>
         <output data-fps>0 fps</output>
       </div>
-      <div class="split">
+      <div class="split" data-split>
         <section class="source-panel">
           <div class="panel-title">ASM Project</div>
           <div class="code-editor" data-asm></div>
         </section>
-        <section class="source-panel">
+        <section class="source-panel wgsl-panel" data-wgsl-panel>
           <div class="panel-title">WGSL</div>
-          <textarea data-wgsl spellcheck="false"></textarea>
+          <div class="code-editor" data-wgsl></div>
         </section>
       </div>
       <pre class="diagnostics" data-diagnostics></pre>
@@ -135,7 +147,9 @@ const mainSelect = appRoot.querySelector<HTMLSelectElement>("[data-main]")!;
 const sizeSelect = appRoot.querySelector<HTMLSelectElement>("[data-size]")!;
 const scaleInput = appRoot.querySelector<HTMLInputElement>("[data-scale]")!;
 const asmEditorHost = appRoot.querySelector<HTMLDivElement>("[data-asm]")!;
-const wgslEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-wgsl]")!;
+const splitPane = appRoot.querySelector<HTMLDivElement>("[data-split]")!;
+const wgslPanel = appRoot.querySelector<HTMLElement>("[data-wgsl-panel]")!;
+const wgslEditorHost = appRoot.querySelector<HTMLDivElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
 const fpsText = appRoot.querySelector<HTMLOutputElement>("[data-fps]")!;
@@ -144,10 +158,17 @@ const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
 const templateSelect = appRoot.querySelector<HTMLSelectElement>("[data-template]")!;
 let suppressAsmChange = false;
+let suppressWgslChange = false;
 const asmEditor = createAsmEditor(asmEditorHost, () => {
   if (!suppressAsmChange) {
     saveCurrentFile();
     scheduleCompile(compileAsm);
+  }
+});
+const wgslEditor = createWgslEditor(wgslEditorHost, () => {
+  if (!suppressWgslChange) {
+    saveCurrentFile();
+    scheduleCompile(compileWgsl);
   }
 });
 
@@ -169,6 +190,15 @@ function currentFile() {
   return state.project.files.find((file) => file.path === state.selectedFile) ?? state.project.files[0];
 }
 
+function fileName(path: string): string {
+  return path.split("/").at(-1) ?? path;
+}
+
+function fileDirectory(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(0, slash) : "";
+}
+
 function bufferSettings() {
   state.project.settings.buffers ??= [null, null, null, null];
   while (state.project.settings.buffers.length < 4) {
@@ -188,7 +218,17 @@ function renderProjectUi(): void {
   for (const file of state.project.files) {
     const button = document.createElement("button");
     button.className = file.path === state.selectedFile ? "file selected" : "file";
-    button.textContent = file.path;
+    button.title = file.path;
+    const icon = document.createElement("span");
+    icon.className = "file-icon";
+    icon.textContent = file.path.endsWith(".inc") ? "#" : "[]";
+    const label = document.createElement("span");
+    label.className = "file-name";
+    label.textContent = fileName(file.path);
+    const directory = document.createElement("span");
+    directory.className = "file-path";
+    directory.textContent = fileDirectory(file.path);
+    button.append(icon, label, directory);
     button.addEventListener("click", () => {
       state.selectedFile = file.path;
       renderProjectUi();
@@ -209,7 +249,11 @@ function renderProjectUi(): void {
   suppressAsmChange = true;
   setEditorText(asmEditor, currentFile().content);
   suppressAsmChange = false;
-  wgslEditor.value = state.project.settings.wgsl;
+  suppressWgslChange = true;
+  setEditorText(wgslEditor, state.project.settings.wgsl);
+  suppressWgslChange = false;
+  splitPane.classList.toggle("show-wgsl", state.showWgsl);
+  wgslPanel.hidden = !state.showWgsl;
   renderBufferControls();
   renderChannelControls();
   syncCanvasSize();
@@ -346,7 +390,7 @@ function renderChannelControls(): void {
 function saveCurrentFile(): void {
   const file = currentFile();
   file.content = asmEditor.state.doc.toString();
-  state.project.settings.wgsl = wgslEditor.value;
+  state.project.settings.wgsl = wgslEditor.state.doc.toString();
 }
 
 let gpuContext: GpuContext | null = null;
@@ -659,7 +703,9 @@ async function compileAsm(): Promise<void> {
     return;
   }
   state.project.settings.wgsl = imageResult.wgsl;
-  wgslEditor.value = imageResult.wgsl;
+  suppressWgslChange = true;
+  setEditorText(wgslEditor, imageResult.wgsl);
+  suppressWgslChange = false;
   await compileWgsl();
 }
 
@@ -719,10 +765,6 @@ appRoot.addEventListener("input", (event) => {
     void setChannelAudio(Number(target.dataset.audioChannel), target.files[0]);
     return;
   }
-  if (target === wgslEditor) {
-    saveCurrentFile();
-    scheduleCompile(compileWgsl);
-  }
   if (target === sizeSelect) {
     state.project.settings.size = sizeSelect.value as ProjectBundle["settings"]["size"];
     syncCanvasSize();
@@ -772,6 +814,10 @@ appRoot.addEventListener("click", (event) => {
   }
   if (action === "save-frame") {
     saveFrame();
+  }
+  if (action === "toggle-wgsl") {
+    state.showWgsl = !state.showWgsl;
+    renderProjectUi();
   }
   if (action === "add-file") {
     saveCurrentFile();

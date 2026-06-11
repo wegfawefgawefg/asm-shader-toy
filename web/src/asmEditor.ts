@@ -205,6 +205,149 @@ export function createAsmEditor(parent: HTMLElement, onChange: () => void): Edit
   });
 }
 
+const wgslKeywords = new Set([
+  "alias",
+  "array",
+  "binding",
+  "bool",
+  "break",
+  "builtin",
+  "case",
+  "compute",
+  "const",
+  "continue",
+  "default",
+  "else",
+  "false",
+  "f32",
+  "fn",
+  "for",
+  "fragment",
+  "if",
+  "i32",
+  "let",
+  "location",
+  "loop",
+  "override",
+  "return",
+  "select",
+  "storage",
+  "struct",
+  "switch",
+  "true",
+  "u32",
+  "uniform",
+  "var",
+  "vec2",
+  "vec3",
+  "vec4",
+  "vertex",
+  "workgroup",
+  "workgroup_size"
+]);
+
+const wgslBuiltins = new Set([
+  "abs",
+  "ceil",
+  "clamp",
+  "cos",
+  "distance",
+  "dot",
+  "floor",
+  "fract",
+  "length",
+  "max",
+  "min",
+  "mix",
+  "normalize",
+  "pow",
+  "round",
+  "sin",
+  "sqrt",
+  "textureLoad",
+  "textureSample",
+  "textureStore"
+]);
+
+const wgslLanguage = StreamLanguage.define({
+  token(stream) {
+    if (stream.eatSpace()) {
+      return null;
+    }
+    if (stream.match("//")) {
+      stream.skipToEnd();
+      return "comment";
+    }
+    if (stream.match(/@[A-Za-z_][A-Za-z0-9_]*/)) {
+      return "attribute";
+    }
+    if (stream.match(/-?(?:\d+\.\d*|\.\d+|\d+)(?:e[+-]?\d+)?/i)) {
+      return "number";
+    }
+    const word = stream.match(/[A-Za-z_][A-Za-z0-9_]*/, false);
+    if (word && word !== true) {
+      const token = word[0];
+      stream.match(/[A-Za-z_][A-Za-z0-9_]*/);
+      if (wgslKeywords.has(token)) {
+        return "keyword";
+      }
+      if (wgslBuiltins.has(token)) {
+        return "operatorKeyword";
+      }
+      return "name";
+    }
+    stream.next();
+    return null;
+  }
+});
+
+export function createWgslEditor(parent: HTMLElement, onChange: () => void): EditorView {
+  return new EditorView({
+    parent,
+    doc: "",
+    extensions: [
+      basicSetup,
+      wgslLanguage,
+      syntaxHighlighting(asmHighlight),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          onChange();
+        }
+      }),
+      EditorView.theme({
+        "&": {
+          height: "100%",
+          minHeight: "0",
+          backgroundColor: "#101317",
+          color: "#e6e8ea",
+          fontSize: "13px"
+        },
+        ".cm-scroller": {
+          fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+          lineHeight: "1.45"
+        },
+        ".cm-content": {
+          padding: "12px"
+        },
+        ".cm-gutters": {
+          backgroundColor: "#101317",
+          color: "#59626d",
+          borderRight: "1px solid #2b3138"
+        },
+        ".cm-activeLine": {
+          backgroundColor: "#171d23"
+        },
+        ".cm-activeLineGutter": {
+          backgroundColor: "#171d23"
+        },
+        ".cm-selectionBackground": {
+          backgroundColor: "#31475f !important"
+        }
+      })
+    ]
+  });
+}
+
 export function setEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text }
