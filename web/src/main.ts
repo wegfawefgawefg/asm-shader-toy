@@ -255,7 +255,21 @@ function renderChannelControls(): void {
     videoInput.accept = "video/mp4,video/webm,video/ogg";
     videoInput.dataset.videoChannel = String(index);
     videoLabel.append(videoInput);
-    controls.append(seedInput, noiseButton, webcamButton, micButton, audioLabel, videoLabel);
+    const videoUrlButton = document.createElement("button");
+    videoUrlButton.className = "button channel-button";
+    videoUrlButton.type = "button";
+    videoUrlButton.dataset.action = "video-url-channel";
+    videoUrlButton.dataset.channel = String(index);
+    videoUrlButton.textContent = "URL";
+    controls.append(
+      seedInput,
+      noiseButton,
+      webcamButton,
+      micButton,
+      audioLabel,
+      videoLabel,
+      videoUrlButton
+    );
     const meta = document.createElement("div");
     meta.className = "channel-meta";
     if (channel.kind === "noise" || channel.seed) {
@@ -518,11 +532,27 @@ async function setChannelAudio(index: number, file: File): Promise<void> {
 async function setChannelVideo(index: number, file: File): Promise<void> {
   stopChannelSource(index);
   const objectUrl = URL.createObjectURL(file);
+  await setChannelVideoSource(index, objectUrl, file.name, objectUrl);
+}
+
+async function setChannelVideoUrl(index: number, url: string): Promise<void> {
+  stopChannelSource(index);
+  await setChannelVideoSource(index, url, url, undefined, url);
+}
+
+async function setChannelVideoSource(
+  index: number,
+  src: string,
+  name: string,
+  objectUrl?: string,
+  sourceUrl?: string
+): Promise<void> {
   const video = document.createElement("video");
   video.muted = true;
   video.loop = true;
   video.playsInline = true;
-  video.src = objectUrl;
+  video.crossOrigin = "anonymous";
+  video.src = src;
   await new Promise<void>((resolve, reject) => {
     video.addEventListener("loadedmetadata", () => resolve(), { once: true });
     video.addEventListener("error", () => reject(video.error ?? new Error("video failed to load")), { once: true });
@@ -531,9 +561,10 @@ async function setChannelVideo(index: number, file: File): Promise<void> {
   channelSources.set(index, { video, objectUrl });
   state.project.settings.channels[index] = {
     kind: "video",
-    name: file.name,
+    name,
     width: Math.max(1, video.videoWidth),
-    height: Math.max(1, video.videoHeight)
+    height: Math.max(1, video.videoHeight),
+    sourceUrl
   };
   renderChannelControls();
   await compileWgsl();
@@ -689,6 +720,17 @@ appRoot.addEventListener("click", (event) => {
       diagnostics.textContent = error instanceof Error ? error.message : String(error);
       statusText.textContent = "Microphone failed";
     });
+  }
+  if (action === "video-url-channel") {
+    const index = Number((event.target as HTMLElement).dataset.channel);
+    const current = state.project.settings.channels[index]?.sourceUrl ?? "";
+    const url = window.prompt("Video URL", current)?.trim();
+    if (url) {
+      void setChannelVideoUrl(index, url).catch((error) => {
+        diagnostics.textContent = error instanceof Error ? error.message : String(error);
+        statusText.textContent = "Video URL failed";
+      });
+    }
   }
 });
 

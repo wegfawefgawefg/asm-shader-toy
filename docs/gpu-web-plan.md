@@ -73,13 +73,15 @@ is an accelerating backend for programs that fit the validated subset.
   bind static images, generated noise textures, or mirrored webcam streams to
   `channel0..3`, upload live microphone analyser data or user-selected audio
   files as 512x2 audio textures, and use user-selected video files as looping
-  channel textures. Browser feedback buffers can be assigned from project files
-  and are rendered with ping-pong textures before the final image pass. The
-  browser preview supports pause, reset, FPS display, and PNG frame export.
+  channel textures. URL-backed video channels are also supported when the remote
+  server permits browser media/CORS access. Browser feedback buffers can be
+  assigned from project files and are rendered with ping-pong textures before
+  the final image pass. The browser preview supports pause, reset, FPS display,
+  and PNG frame export.
   ASM and WGSL edits hot-compile after a short debounce.
   Image/noise channels are preserved in project bundles; webcam, microphone,
   audio, and video channels preserve metadata and reconnect through browser
-  permission or file selection. Native WebGPU execution is still unimplemented.
+  permission or file selection.
 
 ## Why WGSL First
 
@@ -162,8 +164,8 @@ is an accelerating backend for programs that fit the validated subset.
    - image upload. Done in the browser prototype.
    - webcam through `getUserMedia`. Done in the browser prototype.
    - microphone/audio analyser through Web Audio. Done in the browser prototype.
-   - video upload or URL-backed video where browser policy allows. User-selected
-     video upload is done in the browser prototype; URL-backed video is deferred.
+   - video upload or URL-backed video where browser policy allows. Done in the
+     browser prototype.
 
 ## Website Parity Target
 

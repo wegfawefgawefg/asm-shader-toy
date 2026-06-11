@@ -29,6 +29,7 @@ export type ChannelSetting = {
   imageDataUrl?: string;
   seed?: string;
   sampleRate?: number;
+  sourceUrl?: string;
 };
 
 export type BufferSetting = {
@@ -95,7 +96,8 @@ function normalizeChannel(channel: Partial<ChannelSetting> | undefined, index: n
     height: channel?.height || defaultSize,
     imageDataUrl: channel?.imageDataUrl,
     seed: channel?.seed,
-    sampleRate: channel?.sampleRate
+    sampleRate: channel?.sampleRate,
+    sourceUrl: channel?.sourceUrl
   };
 }
 

@@ -122,6 +122,35 @@ describe("project bundles", () => {
     });
   });
 
+  test("preserves URL-backed browser video metadata", () => {
+    const project = normalizeProject({
+      files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [
+          {
+            kind: "video",
+            name: "https://example.com/clip.mp4",
+            width: 640,
+            height: 360,
+            sourceUrl: "https://example.com/clip.mp4"
+          }
+        ]
+      }
+    });
+
+    expect(project.settings.channels[0]).toMatchObject({
+      kind: "video",
+      name: "https://example.com/clip.mp4",
+      width: 640,
+      height: 360,
+      sourceUrl: "https://example.com/clip.mp4"
+    });
+  });
+
   test("preserves browser audio channel metadata without serializing media blobs", () => {
     const project = normalizeProject({
       files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],

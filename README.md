@@ -158,8 +158,9 @@ The browser compiler currently covers includes, aliases, `.const`, `.consts`,
 labels, branches, calls, arithmetic, texture/channel metadata ops, live input
 query ops, and color output. Image files, generated noise textures, live webcam
 streams, microphone analyser channels, and user-selected video files can be
-loaded into `channel0..3` from the sidebar. User-selected audio files can also
-feed 512x2 waveform/spectrum channel textures. Image/noise channels are
+loaded into `channel0..3` from the sidebar. URL-backed videos are supported when
+the remote server permits browser media/CORS access. User-selected audio files
+can also feed 512x2 waveform/spectrum channel textures. Image/noise channels are
 preserved in exported/shared project bundles; webcam, microphone, video, and
 audio channels save their metadata but reconnect through local browser
 permission or file selection. Feedback buffer passes can be assigned to
