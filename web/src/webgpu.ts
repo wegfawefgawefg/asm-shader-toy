@@ -250,8 +250,8 @@ function writeUniforms(
   device.queue.writeBuffer(buffer, 0, values);
 }
 
-async function loadImageBitmap(dataUrl: string): Promise<ImageBitmap> {
-  const response = await fetch(dataUrl);
+async function loadImageBitmap(src: string): Promise<ImageBitmap> {
+  const response = await fetch(src);
   const blob = await response.blob();
   return createImageBitmap(blob);
 }
@@ -260,10 +260,11 @@ async function makeChannelTexture(device: GPUDevice, channel: ChannelSetting): P
   if (channel.kind === "noise" || channel.seed) {
     return makeNoiseTexture(device, channel.seed ?? channel.name);
   }
-  if (!channel.imageDataUrl) {
+  const imageSource = channel.imageDataUrl ?? channel.sourceUrl;
+  if (!imageSource) {
     return makeFallbackTexture(device);
   }
-  const image = await loadImageBitmap(channel.imageDataUrl);
+  const image = await loadImageBitmap(imageSource);
   const texture = device.createTexture({
     size: { width: image.width, height: image.height },
     format: "rgba8unorm",

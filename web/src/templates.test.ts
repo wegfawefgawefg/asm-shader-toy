@@ -48,4 +48,31 @@ describe("template projects", () => {
     expect(pixelated.settings.maxSteps).toBe(16384);
     expect(pixelated.settings.wgsl).toContain("steps >= 16384");
   });
+
+  test("preloads useful channel assets for media templates", () => {
+    const image = makeTemplateProject(templateProjects.find((template) => template.id === "examples/textures/image_passthrough.asm")!);
+    expect(image.settings.channels[0]).toMatchObject({
+      kind: "image",
+      name: "checker.png",
+      sourceUrl: "examples/assets/checker.png"
+    });
+
+    const multiImage = makeTemplateProject(templateProjects.find((template) => template.id === "examples/textures/multi_image_mix.asm")!);
+    expect(multiImage.settings.channels[0].sourceUrl).toBe("examples/assets/checker.png");
+    expect(multiImage.settings.channels[1].sourceUrl).toBe("examples/assets/bars.png");
+
+    const audio = makeTemplateProject(templateProjects.find((template) => template.id === "examples/audio/audio_scope.asm")!);
+    expect(audio.settings.channels[0]).toMatchObject({
+      kind: "audio",
+      name: "two_tone.wav",
+      sourceUrl: "examples/assets/audio/two_tone.wav"
+    });
+
+    const video = makeTemplateProject(templateProjects.find((template) => template.id === "examples/video/poster_edges.asm")!);
+    expect(video.settings.channels[0]).toMatchObject({
+      kind: "video",
+      name: "big_buck_bunny_4m34s_640x360.mp4",
+      sourceUrl: "examples/assets/video/big_buck_bunny_4m34s_640x360.mp4"
+    });
+  });
 });

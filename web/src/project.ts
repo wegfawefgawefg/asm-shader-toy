@@ -89,7 +89,7 @@ export function makeDefaultProject(): ProjectBundle {
 }
 
 function normalizeChannel(channel: Partial<ChannelSetting> | undefined, index: number): ChannelSetting {
-  const kind = channel?.kind ?? (channel?.seed ? "noise" : channel?.imageDataUrl ? "image" : "fallback");
+  const kind = channel?.kind ?? (channel?.seed ? "noise" : channel?.imageDataUrl || channel?.sourceUrl ? "image" : "fallback");
   const defaultSize = kind === "noise" ? 256 : 1;
   return {
     kind,

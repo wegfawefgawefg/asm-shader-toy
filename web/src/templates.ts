@@ -50,6 +50,53 @@ const fallbackChannels: ProjectBundle["settings"]["channels"] = [
 
 const commonFiles: ProjectFile[] = [{ path: "examples/common/math.inc", content: commonMath }];
 
+const checkerChannel: ProjectBundle["settings"]["channels"][number] = {
+  kind: "image",
+  name: "checker.png",
+  width: 8,
+  height: 8,
+  sourceUrl: "examples/assets/checker.png"
+};
+
+const barsChannel: ProjectBundle["settings"]["channels"][number] = {
+  kind: "image",
+  name: "bars.png",
+  width: 8,
+  height: 8,
+  sourceUrl: "examples/assets/bars.png"
+};
+
+const twoToneChannel: ProjectBundle["settings"]["channels"][number] = {
+  kind: "audio",
+  name: "two_tone.wav",
+  width: 512,
+  height: 2,
+  sampleRate: 44100,
+  sourceUrl: "examples/assets/audio/two_tone.wav"
+};
+
+const testsrcVideoChannel: ProjectBundle["settings"]["channels"][number] = {
+  kind: "video",
+  name: "testsrc_160x90.mp4",
+  width: 160,
+  height: 90,
+  sourceUrl: "examples/assets/video/testsrc_160x90.mp4"
+};
+
+const bigBuckBunnyChannel: ProjectBundle["settings"]["channels"][number] = {
+  kind: "video",
+  name: "big_buck_bunny_4m34s_640x360.mp4",
+  width: 640,
+  height: 360,
+  sourceUrl: "examples/assets/video/big_buck_bunny_4m34s_640x360.mp4"
+};
+
+function withChannels(
+  channels: Array<ProjectBundle["settings"]["channels"][number]>
+): ProjectBundle["settings"]["channels"] {
+  return [...channels.map((channel) => ({ ...channel })), ...fallbackChannels.slice(channels.length).map((channel) => ({ ...channel }))];
+}
+
 function single(path: string, content: string, extras: Partial<TemplateProject> = {}): TemplateProject {
   return {
     id: path,
@@ -108,14 +155,12 @@ export const templateProjects: TemplateProject[] = [
   single("examples/perf/heavy.asm", heavy, { size: "160x160", scale: 3 }),
   single("examples/raymarch/planet_sphere.asm", planetSphere, { size: "160x160", scale: 3 }),
   single("examples/raymarch/pixelated_planet.asm", pixelatedPlanet, { size: "506x632", scale: 1, maxSteps: 16384 }),
-  single("examples/textures/image_passthrough.asm", imagePassthrough),
-  single("examples/textures/multi_image_mix.asm", multiImageMix),
+  single("examples/textures/image_passthrough.asm", imagePassthrough, { channels: withChannels([checkerChannel]) }),
+  single("examples/textures/multi_image_mix.asm", multiImageMix, { channels: withChannels([checkerChannel, barsChannel]) }),
   single("examples/textures/noise_field.asm", noiseField, {
     channels: [{ kind: "noise", name: "noise:42", width: 256, height: 256, seed: "42" }, ...fallbackChannels.slice(1)]
   }),
-  single("examples/audio/audio_scope.asm", audioScope, {
-    channels: [{ kind: "audio", name: "choose audio file", width: 512, height: 2, sampleRate: 44100 }, ...fallbackChannels.slice(1)]
-  }),
+  single("examples/audio/audio_scope.asm", audioScope, { channels: withChannels([twoToneChannel]) }),
   single("examples/microphone/mic_scope.asm", micScope, {
     channels: [{ kind: "microphone", name: "microphone", width: 512, height: 2, sampleRate: 44100 }, ...fallbackChannels.slice(1)]
   }),
@@ -124,10 +169,10 @@ export const templateProjects: TemplateProject[] = [
     scale: 2,
     channels: [{ kind: "webcam", name: "webcam", width: 320, height: 240 }, ...fallbackChannels.slice(1)]
   }),
-  single("examples/video/video_channel.asm", videoChannel, { size: "320x180", scale: 2 }),
-  single("examples/video/video_texel.asm", videoTexel, { size: "160x90", scale: 3 }),
-  single("examples/video/channel_metadata.asm", videoMetadata, { size: "320x180", scale: 2 }),
-  single("examples/video/poster_edges.asm", posterEdges, { size: "320x180", scale: 2 })
+  single("examples/video/video_channel.asm", videoChannel, { size: "320x180", scale: 2, channels: withChannels([bigBuckBunnyChannel]) }),
+  single("examples/video/video_texel.asm", videoTexel, { size: "160x90", scale: 3, channels: withChannels([testsrcVideoChannel]) }),
+  single("examples/video/channel_metadata.asm", videoMetadata, { size: "320x180", scale: 2, channels: withChannels([bigBuckBunnyChannel]) }),
+  single("examples/video/poster_edges.asm", posterEdges, { size: "320x180", scale: 2, channels: withChannels([bigBuckBunnyChannel]) })
 ];
 
 export function makeTemplateProject(template: TemplateProject): ProjectBundle {

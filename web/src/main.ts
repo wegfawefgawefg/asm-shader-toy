@@ -407,12 +407,13 @@ function renderChannelControls(): void {
         ? `${channel.width}x${channel.height} mic ${channel.sampleRate ?? 0}hz`
         : "microphone disconnected";
     } else if (channel.kind === "video") {
-      meta.textContent = channelSources.has(index) ? `${channel.width}x${channel.height} ${channel.name}` : "video disconnected";
+      meta.textContent =
+        channelSources.has(index) || channel.sourceUrl ? `${channel.width}x${channel.height} ${channel.name}` : "video disconnected";
     } else if (channel.kind === "audio") {
       meta.textContent = channelSources.has(index)
         ? `${channel.width}x${channel.height} ${channel.name} ${channel.sampleRate ?? 0}hz`
         : "audio disconnected";
-    } else if (channel.imageDataUrl) {
+    } else if (channel.imageDataUrl || channel.sourceUrl) {
       meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
     } else {
       meta.textContent = "fallback 1x1";
@@ -432,6 +433,8 @@ function saveCurrentFile(): void {
 let gpuContext: GpuContext | null = null;
 let program: ProgramState | null = null;
 let rendererError = "";
+await restoreProjectRuntimeSources();
+renderProjectUi();
 try {
   gpuContext = await initWebGpu(canvas);
   program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
@@ -538,6 +541,14 @@ function stopChannelSource(index: number): void {
   channelSources.delete(index);
 }
 
+function resumeAudioContexts(): void {
+  for (const source of channelSources.values()) {
+    if (source.audioContext?.state === "suspended") {
+      void source.audioContext.resume();
+    }
+  }
+}
+
 async function setChannelImage(index: number, file: File): Promise<void> {
   stopChannelSource(index);
   const imageDataUrl = await dataUrlForFile(file);
@@ -635,6 +646,25 @@ async function setChannelAudio(index: number, file: File): Promise<void> {
   stopChannelSource(index);
   const audioContext = new AudioContext();
   const audioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+  await setChannelAudioBuffer(index, file.name, audioContext, audioBuffer);
+}
+
+async function setChannelAudioUrl(index: number, url: string, name: string, compile = true): Promise<void> {
+  stopChannelSource(index);
+  const audioContext = new AudioContext();
+  const response = await fetch(url);
+  const audioBuffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+  await setChannelAudioBuffer(index, name, audioContext, audioBuffer, url, compile);
+}
+
+async function setChannelAudioBuffer(
+  index: number,
+  name: string,
+  audioContext: AudioContext,
+  audioBuffer: AudioBuffer,
+  sourceUrl?: string,
+  compile = true
+): Promise<void> {
   const sourceNode = audioContext.createBufferSource();
   const analyser = audioContext.createAnalyser();
   const silentGain = audioContext.createGain();
@@ -665,13 +695,16 @@ async function setChannelAudio(index: number, file: File): Promise<void> {
   });
   state.project.settings.channels[index] = {
     kind: "audio",
-    name: file.name,
+    name,
     width,
     height,
-    sampleRate: audioBuffer.sampleRate
+    sampleRate: audioBuffer.sampleRate,
+    sourceUrl
   };
   renderChannelControls();
-  await compileWgsl();
+  if (compile) {
+    await compileWgsl();
+  }
 }
 
 async function setChannelVideo(index: number, file: File): Promise<void> {
@@ -690,7 +723,8 @@ async function setChannelVideoSource(
   src: string,
   name: string,
   objectUrl?: string,
-  sourceUrl?: string
+  sourceUrl?: string,
+  compile = true
 ): Promise<void> {
   const video = document.createElement("video");
   video.muted = true;
@@ -712,7 +746,23 @@ async function setChannelVideoSource(
     sourceUrl
   };
   renderChannelControls();
-  await compileWgsl();
+  if (compile) {
+    await compileWgsl();
+  }
+}
+
+async function restoreProjectRuntimeSources(): Promise<void> {
+  const restores = state.project.settings.channels.map(async (channel, index) => {
+    if (channel.kind === "video" && channel.sourceUrl) {
+      stopChannelSource(index);
+      await setChannelVideoSource(index, channel.sourceUrl, channel.name, undefined, channel.sourceUrl, false);
+    }
+    if (channel.kind === "audio" && channel.sourceUrl) {
+      stopChannelSource(index);
+      await setChannelAudioUrl(index, channel.sourceUrl, channel.name, false);
+    }
+  });
+  await Promise.all(restores);
 }
 
 
@@ -783,6 +833,7 @@ async function loadTemplate(templateId: string): Promise<void> {
   state.selectedFile = state.project.settings.main;
   state.frame = 0;
   state.startSeconds = performance.now() / 1000;
+  await restoreProjectRuntimeSources();
   renderProjectUi();
   await compileAsm();
   templateSelect.value = "";
@@ -863,6 +914,9 @@ canvas.addEventListener("wheel", (event) => {
   inputState.mouseWheelY += event.deltaY;
   event.preventDefault();
 });
+
+window.addEventListener("pointerdown", resumeAudioContexts);
+window.addEventListener("keydown", resumeAudioContexts);
 
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
@@ -963,24 +1017,30 @@ appRoot.querySelector<HTMLInputElement>("[data-import]")!.addEventListener("chan
     stopChannelSource(index);
   }
   state.selectedFile = state.project.settings.main;
+  await restoreProjectRuntimeSources();
   renderProjectUi();
   await compileWgsl();
 });
 
 window.addEventListener("hashchange", async () => {
   const decoded = await decodeProject(location.hash);
-  if (!decoded) {
+  if (decoded) {
+    state.project = normalizeProject(decoded);
+    for (const index of Array.from(channelSources.keys())) {
+      stopChannelSource(index);
+    }
+    state.selectedFile = decoded.settings.main;
+    await restoreProjectRuntimeSources();
+    renderProjectUi();
+    await compileWgsl();
     return;
   }
-  state.project = normalizeProject(decoded);
-  for (const index of Array.from(channelSources.keys())) {
-    stopChannelSource(index);
-  }
-  state.selectedFile = decoded.settings.main;
-  renderProjectUi();
-  await compileWgsl();
-});
 
-renderProjectUi();
+  const params = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
+  const templateId = params.get("template");
+  if (templateId) {
+    await loadTemplate(templateId);
+  }
+});
 requestAnimationFrame(tick);
 }
