@@ -208,6 +208,12 @@ textarea {
   min-width: 0;
 }
 
+.link-button {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+}
+
 .file {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);

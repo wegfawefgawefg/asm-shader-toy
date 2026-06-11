@@ -124,6 +124,7 @@ appRoot.innerHTML = `
             <input class="hidden-input" type="file" accept="application/json" data-import />
           </label>
           <button class="button" data-action="share">Share</button>
+          <a class="button link-button" href="${import.meta.env.BASE_URL}about.html">About</a>
         </div>
       </section>
       <div class="sidebar-scroll">
