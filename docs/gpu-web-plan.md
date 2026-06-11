@@ -55,10 +55,15 @@ is an accelerating backend for programs that fit the validated subset.
   texture programs.
 - `ast-webgpu-surface-probe` opens an SDL window on Linux/X11, creates a native
   WebGPU surface, clears it, and presents frames. This proves the surface path
-  but is not yet the full shader-presenting runner.
+  independently from shader execution.
+- `ast-webgpu-run` opens an SDL window on Linux/X11, runs emitted asm WGSL on
+  native WebGPU, and presents the intermediate texture with nearest-neighbor
+  integer scaling. It supports the same static image, generated noise,
+  deterministic video/audio file, and feedback-buffer inputs as
+  `ast-webgpu-frame`.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU shader presentation through SDL and live
-  webcam/microphone media channels are still unimplemented.
+  falling back. Native WebGPU live webcam/microphone media channels are still
+  unimplemented.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
@@ -117,7 +122,8 @@ is an accelerating backend for programs that fit the validated subset.
 
    Prefer `wgpu-native` or Dawn over direct Vulkan. The runner should render the
    same intermediate texture size and present it with nearest-neighbor scaling.
-   Keep the current SDL CPU runner intact while the GPU runner stabilizes.
+   Keep the current SDL CPU runner intact while the GPU runner stabilizes. A
+   first SDL/X11 runner now exists as `ast-webgpu-run`.
 
 5. **Implement browser runner**
 

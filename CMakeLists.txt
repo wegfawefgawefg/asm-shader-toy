@@ -191,9 +191,23 @@ if(AST_BUILD_NATIVE_WEBGPU)
     target_compile_features(ast-webgpu-surface-probe PRIVATE cxx_std_20)
     ast_apply_warnings(ast-webgpu-surface-probe)
 
+    add_executable(ast-webgpu-run src/native_webgpu_runner.cpp)
+    target_link_libraries(ast-webgpu-run PRIVATE
+        ast::core
+        webgpu
+        ${AST_WEBGPU_SDL2_TARGET}
+        ${AST_WEBGPU_SDL2_IMAGE_TARGET}
+    )
+    target_compile_features(ast-webgpu-run PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(ast-webgpu-run PRIVATE -Wno-unused-function)
+    endif()
+    ast_apply_warnings(ast-webgpu-run)
+
     if(COMMAND target_copy_webgpu_binaries)
         target_copy_webgpu_binaries(ast-webgpu-probe)
         target_copy_webgpu_binaries(ast-webgpu-frame)
         target_copy_webgpu_binaries(ast-webgpu-surface-probe)
+        target_copy_webgpu_binaries(ast-webgpu-run)
     endif()
 endif()

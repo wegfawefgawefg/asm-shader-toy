@@ -53,6 +53,10 @@ headless renderer for deterministic single-image programs:
   --time 0.25 \
   --compare-cpu
 
+./build-webgpu-probe/ast-webgpu-run examples/basics/plasma.asm \
+  --size gba \
+  --scale 4
+
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ```
 
@@ -63,13 +67,20 @@ and feedback buffer passes are uploaded or rendered as `rgba8unorm` textures and
 use the same metadata uniforms as the CPU VM. Video file channels decode one
 deterministic frame at the requested shader time and upload it as a channel
 texture. Audio file channels decode through ffmpeg and upload the same 512x2
-waveform/spectrum texture shape as the CPU runner. Full SDL shader presentation,
-live webcam, and live microphone are still future native WebGPU work.
+waveform/spectrum texture shape as the CPU runner.
+
+`ast-webgpu-run` is the first visible native WebGPU runner. It opens an SDL
+window on Linux/X11, runs emitted asm WGSL into the same intermediate
+`rgba8unorm` texture used by the headless frame tool, and presents that texture
+to the window with nearest-neighbor integer scaling. It currently supports the
+same static image, generated noise, deterministic video/audio file, and feedback
+buffer inputs as `ast-webgpu-frame`. Live webcam and live microphone channels
+are still future native WebGPU work.
 
 `ast-webgpu-surface-probe` is a narrower presentation smoke test. On Linux/X11,
 it opens an SDL window, creates a WebGPU surface from the native window handle,
 configures the surface, clears it for a few frames, and presents. It does not
-yet render emitted asm WGSL to the window.
+run emitted asm WGSL.
 
 Run the repeatable native GPU parity gate:
 

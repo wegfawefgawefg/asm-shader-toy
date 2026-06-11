@@ -1273,6 +1273,7 @@ bool assemble_buffer_programs(const Args& args,
 
 } // namespace
 
+#ifndef AST_WEBGPU_FRAME_LIBRARY
 int main(int argc, char** argv) {
     const std::optional<Args> parsed = parse_args(argc, argv);
     if (!parsed.has_value()) {
@@ -1361,3 +1362,4 @@ int main(int argc, char** argv) {
     std::cout << '\n';
     return 0;
 }
+#endif

@@ -86,6 +86,9 @@ Build the optional native WebGPU tools:
   --size 64x32 \
   --time 0.25 \
   --compare-cpu
+./build-webgpu-probe/ast-webgpu-run examples/basics/plasma.asm \
+  --size gba \
+  --scale 4
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ./scripts/validate_webgpu_frame.sh
 ```
@@ -98,6 +101,9 @@ readback with the CPU VM, including static image, generated noise, and feedback
 buffer channels. It can also sample a deterministic frame from video channels.
 Audio-file channels are decoded into the same 512x2 waveform/spectrum texture
 shape as the CPU runner.
+The `ast-webgpu-run` tool opens an SDL window, renders emitted asm WGSL on the
+GPU, and presents the intermediate texture with nearest-neighbor integer
+scaling.
 The surface probe opens an SDL window, creates a native WebGPU surface, clears
 it, and presents frames.
 

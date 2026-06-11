@@ -13,4 +13,5 @@ cmake -S "${repo_root}" -B "${repo_root}/build-webgpu-probe" \
 cmake --build "${repo_root}/build-webgpu-probe" --target \
     ast-webgpu-probe \
     ast-webgpu-frame \
-    ast-webgpu-surface-probe
+    ast-webgpu-surface-probe \
+    ast-webgpu-run
