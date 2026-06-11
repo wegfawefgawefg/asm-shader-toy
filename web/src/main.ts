@@ -11,7 +11,15 @@ import {
   type ProjectBundle
 } from "./project";
 import { makeTemplateProject, templateProjects } from "./templates";
-import { createProgram, destroyProgram, initWebGpu, renderFrame, type ChannelRuntimeSource } from "./webgpu";
+import {
+  createProgram,
+  destroyProgram,
+  initWebGpu,
+  renderFrame,
+  type ChannelRuntimeSource,
+  type GpuContext,
+  type ProgramState
+} from "./webgpu";
 
 type AppState = {
   project: ProjectBundle;
@@ -37,9 +45,12 @@ if (!app) {
 }
 const appRoot: HTMLDivElement = app;
 
-void main();
+void main().catch((error) => {
+  appRoot.textContent = error instanceof Error ? error.message : String(error);
+});
 
 async function main(): Promise<void> {
+  const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
   const state: AppState = {
     project: makeDefaultProject(),
     selectedFile: "main.asm",
@@ -56,6 +67,12 @@ async function main(): Promise<void> {
   if (loaded) {
     state.project = normalizeProject(loaded);
     state.selectedFile = loaded.settings.main;
+  } else {
+    const template = templateProjects.find((candidate) => candidate.id === hashParams.get("template"));
+    if (template) {
+      state.project = makeTemplateProject(template);
+      state.selectedFile = template.main;
+    }
   }
 
 appRoot.innerHTML = `
@@ -320,9 +337,20 @@ function saveCurrentFile(): void {
   state.project.settings.wgsl = wgslEditor.value;
 }
 
-let gpuContext = await initWebGpu(canvas);
-let program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
-statusText.textContent = "WebGPU ready";
+let gpuContext: GpuContext | null = null;
+let program: ProgramState | null = null;
+let rendererError = "";
+try {
+  gpuContext = await initWebGpu(canvas);
+  program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
+  statusText.textContent = "WebGPU ready";
+} catch (error) {
+  rendererError = error instanceof Error ? error.message : String(error);
+  diagnostics.textContent = `${rendererError}
+
+The editor and ASM compiler are still usable, but this browser could not start the WebGPU renderer.`;
+  statusText.textContent = "WebGPU unavailable";
+}
 let compileTimer: number | undefined;
 
 function scheduleCompile(task: () => Promise<void>): void {
@@ -337,6 +365,11 @@ function scheduleCompile(task: () => Promise<void>): void {
 
 async function compileWgsl(): Promise<void> {
   saveCurrentFile();
+  if (!gpuContext) {
+    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    statusText.textContent = "WebGPU unavailable";
+    return;
+  }
   try {
     destroyProgram(program);
     program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
@@ -349,6 +382,11 @@ async function compileWgsl(): Promise<void> {
 }
 
 async function resetProgram(): Promise<void> {
+  if (!gpuContext) {
+    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    statusText.textContent = "WebGPU unavailable";
+    return;
+  }
   state.frame = 0;
   state.startSeconds = performance.now() / 1000;
   state.fps = 0;
@@ -614,7 +652,7 @@ async function compileAsm(): Promise<void> {
 }
 
 function tick(): void {
-  if (state.running && program) {
+  if (state.running && gpuContext && program) {
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources);
     state.frame += 1;
     state.fpsFrames += 1;
@@ -647,6 +685,7 @@ async function loadTemplate(templateId: string): Promise<void> {
   await compileAsm();
   templateSelect.value = "";
   statusText.textContent = `Loaded ${template.name}`;
+  history.replaceState(null, "", `#template=${encodeURIComponent(template.id)}`);
 }
 
 appRoot.addEventListener("input", (event) => {

@@ -1,7 +1,7 @@
 import { makeNoisePixels, noiseTextureSize } from "./noise";
 import { parseSize, type ChannelSetting, type ProjectSettings } from "./project";
 
-type GpuContext = {
+export type GpuContext = {
   device: GPUDevice;
   canvasContext: GPUCanvasContext;
   format: GPUTextureFormat;
@@ -9,7 +9,7 @@ type GpuContext = {
   renderPipeline: GPURenderPipeline;
 };
 
-type ProgramState = {
+export type ProgramState = {
   source: string;
   sizeKey: string;
   computePipeline: GPUComputePipeline;
