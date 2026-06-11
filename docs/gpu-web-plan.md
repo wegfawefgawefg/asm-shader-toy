@@ -62,26 +62,32 @@ is an accelerating backend for programs that fit the validated subset.
 
 5. **Implement browser runner**
 
-   Build a small WebGPU page with:
+   Build a WebGPU page with the same authoring model as the native runner:
 
    - code editor
+   - in-browser project file tree
+   - selected main file
+   - `.include` resolution across project files and bundled stdlib files
    - compile diagnostics
    - preview canvas
    - size presets
-   - channel controls where browser APIs make sense
+   - channel controls
    - pause/reset
+   - FPS display
+   - save/export frame
+   - import/export project
+   - share links
 
 6. **Add share links**
 
-   Encode source and simple settings in the URL hash:
+   Encode project files and simple settings in the URL hash:
 
    ```text
-   #code=<compressed-base64url>&size=gba&scale=4
+   #project=<compressed-base64url>&main=main.asm&size=gba&scale=4
    ```
 
    Use compression such as deflate or LZ-string before base64url encoding. Keep
-   multi-file projects out of the first share-link pass unless a compact bundle
-   format becomes obvious.
+   the bundle format simple: file path plus text content plus selected settings.
 
 7. **Add richer web channel support**
 
@@ -92,6 +98,52 @@ is an accelerating backend for programs that fit the validated subset.
    - webcam through `getUserMedia`
    - microphone/audio analyser through Web Audio
    - video upload or URL-backed video where browser policy allows
+
+## Website Parity Target
+
+The website should aim for the native runner's utility surface, not a separate
+mini-language.
+
+Language features to support:
+
+- `.include`, including local project files and bundled `stdlib/std` files
+- `.alias`, `.const`, and `.consts`
+- global and local labels
+- branches, `call`, `ret`, and `halt`
+- `tex`, `texel`, `chdim`, `chtime`, and `chsrate`
+- `key`, `mbtn`, `mwheel`, `gbtn`, and `gaxis`
+- feedback buffer passes
+
+Runtime/editor features to support:
+
+- multi-file project tree with a selected entrypoint
+- hot compile on edit
+- diagnostics with source file and line information
+- pause, reset, FPS, and size presets
+- image upload/drop for channels
+- generated noise channels
+- webcam through `getUserMedia`
+- microphone and audio analyser through Web Audio
+- video through upload or user-selected media
+- save frame
+- import/export project bundle
+- compressed share URL
+
+Useful libraries are acceptable when they reduce risk:
+
+- CodeMirror 6 or Monaco for editing, with CodeMirror preferred for weight and
+  custom language highlighting.
+- Vite for a small browser app build.
+- `fflate` or `lz-string` for compressed share links.
+- Browser WebGPU APIs directly, with a small helper library only if it removes
+  real boilerplate.
+- Browser-native media APIs for image, video, webcam, microphone, and audio.
+
+The assembler/compiler behavior must not drift from native. Either share the
+compiler implementation, compile the C++ assembler to WASM, or keep a
+TypeScript implementation covered by the same golden tests as the C++ assembler.
+For velocity, a TypeScript compiler prototype is acceptable only if parity tests
+are added early.
 
 ## Hard Parts
 
@@ -107,6 +159,8 @@ is an accelerating backend for programs that fit the validated subset.
   possible.
 - Web media APIs: webcam, microphone, and audio all have browser permission and
   autoplay constraints.
+- Compiler parity: a web assembler/compiler can diverge from native behavior if
+  it is not shared or covered by golden tests.
 
 ## Non-Goals For The First GPU Pass
 
@@ -116,10 +170,12 @@ is an accelerating backend for programs that fit the validated subset.
 - Dynamic indirect jumps.
 - Audio playback synchronization.
 - A complete hosted gallery.
+- A permanent second language dialect for the browser.
 
 ## Success Criteria
 
 - A meaningful subset of existing examples runs on GPU.
 - GPU and CPU output match closely for deterministic examples.
-- The browser can edit, run, pause, reset, and share simple shaders by URL.
+- The browser can edit multi-file projects, run, pause, reset, and share shaders
+  by URL.
 - Unsupported programs fail with clear diagnostics instead of undefined output.
