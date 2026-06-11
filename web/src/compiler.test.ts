@@ -111,7 +111,9 @@ out r20, uv_y, time, 1.0
 
     expect(result.diagnostics).toEqual([]);
     expect(result.glsl).toContain("#version 300 es");
+    expect(result.glsl).toContain("int py = int(floor(gl_FragCoord.y));");
     expect(result.glsl).toContain("texelFetch(channel0_texture");
+    expect(result.glsl).toContain("break;");
     expect(result.glsl).toContain("fragColor = color");
   });
 

@@ -1206,7 +1206,7 @@ float ast_gamepad_axis_state(int axis) {
 void main() {
     float r[64];
     int px = int(floor(gl_FragCoord.x));
-    int py = int(ast_height - 1.0 - floor(gl_FragCoord.y));
+    int py = int(floor(gl_FragCoord.y));
     r[0] = float(px); r[1] = float(py); r[2] = ast_time; r[3] = ast_width;
     r[4] = ast_height; r[5] = ast_mouse_x; r[6] = ast_mouse_y;
     r[7] = ast_mouse_down; r[8] = ast_mouse_click_x; r[9] = ast_mouse_click_y;
@@ -1378,7 +1378,7 @@ export function compileAsmToGlsl(files: ProjectSource[], main: string, maxSteps 
         break;
       }
     }
-    glsl += "        }\n";
+    glsl += "            break;\n        }\n";
   });
   glsl += `        default: { pc = -1; }
         }
