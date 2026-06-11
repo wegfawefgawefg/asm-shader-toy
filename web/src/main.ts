@@ -433,6 +433,7 @@ function saveCurrentFile(): void {
 let gpuContext: GpuContext | null = null;
 let program: ProgramState | null = null;
 let rendererError = "";
+let programBuildVersion = 0;
 await restoreProjectRuntimeSources();
 renderProjectUi();
 try {
@@ -458,6 +459,37 @@ function scheduleCompile(task: () => Promise<void>): void {
   }, 350);
 }
 
+async function waitForSubmittedWork(context: GpuContext): Promise<void> {
+  try {
+    await context.device.queue.onSubmittedWorkDone();
+  } catch {
+    // Device errors are reported through the uncaptured-error path below.
+  }
+}
+
+async function replaceProgram(status: string): Promise<void> {
+  if (!gpuContext) {
+    diagnostics.textContent = rendererError || "WebGPU is not available.";
+    statusText.textContent = "WebGPU unavailable";
+    return;
+  }
+  const context = gpuContext;
+  const oldProgram = program;
+  const version = ++programBuildVersion;
+  program = null;
+  await waitForSubmittedWork(context);
+  destroyProgram(oldProgram);
+  const nextProgram = await createProgram(context, state.project.settings.wgsl, state.project.settings, channelSources);
+  if (version === programBuildVersion) {
+    program = nextProgram;
+    diagnostics.textContent = "";
+    statusText.textContent = status;
+    return;
+  }
+  await waitForSubmittedWork(context);
+  destroyProgram(nextProgram);
+}
+
 async function compileWgsl(): Promise<void> {
   saveCurrentFile();
   if (!gpuContext) {
@@ -466,10 +498,7 @@ async function compileWgsl(): Promise<void> {
     return;
   }
   try {
-    destroyProgram(program);
-    program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
-    diagnostics.textContent = "";
-    statusText.textContent = "Compiled WGSL";
+    await replaceProgram("Compiled WGSL");
   } catch (error) {
     diagnostics.textContent = error instanceof Error ? error.message : String(error);
     statusText.textContent = "WGSL compile failed";
@@ -487,10 +516,8 @@ async function resetProgram(): Promise<void> {
   state.fps = 0;
   state.fpsFrames = 0;
   state.fpsStart = state.startSeconds;
-  destroyProgram(program);
-  program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
+  await replaceProgram("Reset");
   fpsText.textContent = "0 fps";
-  statusText.textContent = "Reset";
 }
 
 function saveFrame(): void {
