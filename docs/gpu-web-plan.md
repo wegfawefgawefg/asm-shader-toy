@@ -42,8 +42,10 @@ is an accelerating backend for programs that fit the validated subset.
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
   compilation exists for a prototype subset covering includes, aliases,
   `.const`, `.consts`, labels, branches, calls, arithmetic, texture/channel
-  metadata ops, live input query ops, and output. Browser texture/media upload controls, feedback
-  buffers, and native WebGPU execution are still unimplemented.
+  metadata ops, live input query ops, and output. Browser image upload controls
+  can bind static images to `channel0..3` and preserve them in project bundles.
+  Generated noise, webcam, microphone/audio, video, feedback buffers, and native
+  WebGPU execution are still unimplemented.
 
 ## Why WGSL First
 

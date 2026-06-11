@@ -1,4 +1,4 @@
-import { parseSize, type ProjectSettings } from "./project";
+import { parseSize, type ChannelSetting, type ProjectSettings } from "./project";
 
 type GpuContext = {
   device: GPUDevice;
@@ -17,6 +17,7 @@ type ProgramState = {
   outputTexture: GPUTexture;
   outputView: GPUTextureView;
   channelTextures: GPUTexture[];
+  channelMetadata: ChannelSetting[];
 };
 
 const renderShader = `
@@ -109,11 +110,33 @@ function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSe
   values[4] = size.height;
   values[13] = 1;
   for (let channel = 0; channel < 4; ++channel) {
+    const metadata = settings.channels[channel] ?? { width: 1, height: 1 };
     const offset = 14 + channel * 4;
-    values[offset] = 1;
-    values[offset + 1] = 1;
+    values[offset] = metadata.width || 1;
+    values[offset + 1] = metadata.height || 1;
   }
   device.queue.writeBuffer(buffer, 0, values);
+}
+
+async function loadImageBitmap(dataUrl: string): Promise<ImageBitmap> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+async function makeChannelTexture(device: GPUDevice, channel: ChannelSetting): Promise<GPUTexture> {
+  if (!channel.imageDataUrl) {
+    return makeFallbackTexture(device);
+  }
+  const image = await loadImageBitmap(channel.imageDataUrl);
+  const texture = device.createTexture({
+    size: { width: image.width, height: image.height },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+  });
+  device.queue.copyExternalImageToTexture({ source: image }, { texture }, { width: image.width, height: image.height });
+  image.close();
+  return texture;
 }
 
 export async function createProgram(context: GpuContext, source: string, settings: ProjectSettings): Promise<ProgramState> {
@@ -138,7 +161,11 @@ export async function createProgram(context: GpuContext, source: string, setting
     size: uniformByteSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
   });
-  const channelTextures = [0, 1, 2, 3].map(() => makeFallbackTexture(device));
+  const normalizedChannels = [...(settings.channels ?? [])];
+  while (normalizedChannels.length < 4) {
+    normalizedChannels.push({ name: `channel${normalizedChannels.length}`, width: 1, height: 1 });
+  }
+  const channelTextures = await Promise.all(normalizedChannels.slice(0, 4).map((channel) => makeChannelTexture(device, channel)));
   const bindGroup = device.createBindGroup({
     layout: computePipeline.getBindGroupLayout(0),
     entries: [
@@ -155,7 +182,8 @@ export async function createProgram(context: GpuContext, source: string, setting
     uniformBuffer,
     outputTexture,
     outputView,
-    channelTextures
+    channelTextures,
+    channelMetadata: normalizedChannels.slice(0, 4)
   };
 }
 

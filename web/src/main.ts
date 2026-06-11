@@ -1,6 +1,15 @@
 import "./styles.css";
 import { compileAsmToWgsl } from "./compiler";
-import { decodeProject, encodeProject, makeDefaultProject, parseSize, sizePresets, type ProjectBundle } from "./project";
+import {
+  decodeProject,
+  encodeProject,
+  makeDefaultProject,
+  normalizeProject,
+  parseSize,
+  sizePresets,
+  type ChannelSetting,
+  type ProjectBundle
+} from "./project";
 import { createProgram, destroyProgram, initWebGpu, renderFrame } from "./webgpu";
 
 type AppState = {
@@ -30,7 +39,7 @@ async function main(): Promise<void> {
 
   const loaded = await decodeProject(location.hash);
   if (loaded) {
-    state.project = loaded;
+    state.project = normalizeProject(loaded);
     state.selectedFile = loaded.settings.main;
   }
 
@@ -46,6 +55,7 @@ appRoot.innerHTML = `
         <input class="hidden-input" type="file" accept="application/json" data-import />
       </label>
       <button class="button" data-action="share">Copy Share URL</button>
+      <div class="channel-list" data-channels></div>
     </aside>
     <section class="editor-pane">
       <div class="toolbar">
@@ -84,6 +94,7 @@ const wgslEditor = appRoot.querySelector<HTMLTextAreaElement>("[data-wgsl]")!;
 const diagnostics = appRoot.querySelector<HTMLPreElement>("[data-diagnostics]")!;
 const statusText = appRoot.querySelector<HTMLDivElement>("[data-status]")!;
 const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
+const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
 
 for (const name of Object.keys(sizePresets)) {
   const option = document.createElement("option");
@@ -127,7 +138,30 @@ function renderProjectUi(): void {
   scaleInput.value = String(state.project.settings.scale);
   asmEditor.value = currentFile().content;
   wgslEditor.value = state.project.settings.wgsl;
+  renderChannelControls();
   syncCanvasSize();
+}
+
+function renderChannelControls(): void {
+  channelList.replaceChildren();
+  state.project.settings.channels.forEach((channel, index) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "channel";
+    const label = document.createElement("label");
+    label.className = "channel-label";
+    label.textContent = `channel${index}`;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/webp,image/gif";
+    input.dataset.channel = String(index);
+    input.className = "channel-input";
+    const meta = document.createElement("div");
+    meta.className = "channel-meta";
+    meta.textContent = channel.imageDataUrl ? `${channel.width}x${channel.height} ${channel.name}` : "fallback 1x1";
+    label.append(input);
+    wrapper.append(label, meta);
+    channelList.append(wrapper);
+  });
 }
 
 function saveCurrentFile(): void {
@@ -151,6 +185,38 @@ async function compileWgsl(): Promise<void> {
     diagnostics.textContent = error instanceof Error ? error.message : String(error);
     statusText.textContent = "WGSL compile failed";
   }
+}
+
+async function dataUrlForFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("could not read image")));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const image = await createImageBitmap(blob);
+  const dimensions = { width: image.width, height: image.height };
+  image.close();
+  return dimensions;
+}
+
+async function setChannelImage(index: number, file: File): Promise<void> {
+  const imageDataUrl = await dataUrlForFile(file);
+  const dimensions = await imageDimensions(imageDataUrl);
+  const channel: ChannelSetting = {
+    name: file.name,
+    width: dimensions.width,
+    height: dimensions.height,
+    imageDataUrl
+  };
+  state.project.settings.channels[index] = channel;
+  renderChannelControls();
+  await compileWgsl();
 }
 
 async function compileAsm(): Promise<void> {
@@ -178,6 +244,10 @@ function tick(): void {
 
 appRoot.addEventListener("input", (event) => {
   const target = event.target;
+  if (target instanceof HTMLInputElement && target.dataset.channel !== undefined && target.files?.[0]) {
+    void setChannelImage(Number(target.dataset.channel), target.files[0]);
+    return;
+  }
   if (target === asmEditor || target === wgslEditor) {
     saveCurrentFile();
   }
@@ -242,7 +312,7 @@ appRoot.querySelector<HTMLInputElement>("[data-import]")!.addEventListener("chan
   if (!file) {
     return;
   }
-  state.project = JSON.parse(await file.text()) as ProjectBundle;
+  state.project = normalizeProject(JSON.parse(await file.text()) as ProjectBundle);
   state.selectedFile = state.project.settings.main;
   renderProjectUi();
   await compileWgsl();
@@ -253,7 +323,7 @@ window.addEventListener("hashchange", async () => {
   if (!decoded) {
     return;
   }
-  state.project = decoded;
+  state.project = normalizeProject(decoded);
   state.selectedFile = decoded.settings.main;
   renderProjectUi();
   await compileWgsl();

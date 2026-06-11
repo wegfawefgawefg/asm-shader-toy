@@ -50,6 +50,41 @@ textarea {
   min-height: 120px;
 }
 
+.channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.channel {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #2b3138;
+  border-radius: 6px;
+  background: #12161a;
+}
+
+.channel-label {
+  display: grid;
+  gap: 6px;
+  color: #d7ff65;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.channel-input {
+  width: 100%;
+  font-size: 11px;
+}
+
+.channel-meta {
+  color: #aab2bd;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .file,
 .button {
   min-height: 30px;
