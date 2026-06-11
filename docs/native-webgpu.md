@@ -57,6 +57,11 @@ headless renderer for deterministic single-image programs:
   --size gba \
   --scale 4
 
+./build-webgpu-probe/ast-webgpu-run examples/webcam/webcam_channel.asm \
+  --webcam0 \
+  --size gba \
+  --scale 4
+
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ```
 
@@ -74,8 +79,10 @@ window on Linux/X11, runs emitted asm WGSL into the same intermediate
 `rgba8unorm` texture used by the headless frame tool, and presents that texture
 to the window with nearest-neighbor integer scaling. It currently supports the
 same static image, generated noise, deterministic video/audio file, and feedback
-buffer inputs as `ast-webgpu-frame`. Live webcam and live microphone channels
-are still future native WebGPU work.
+buffer inputs as `ast-webgpu-frame`. It also supports live mirrored webcam
+channels by streaming frames through ffmpeg and uploading the latest complete
+frame into the GPU channel texture before dispatch. Live microphone channels are
+still future native WebGPU work.
 
 `ast-webgpu-surface-probe` is a narrower presentation smoke test. On Linux/X11,
 it opens an SDL window, creates a WebGPU surface from the native window handle,

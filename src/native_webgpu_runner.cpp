@@ -7,9 +7,14 @@
 #include <SDL_syswm.h>
 // clang-format on
 
+#include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <fcntl.h>
 #include <limits>
+#include <mutex>
 #include <thread>
+#include <unistd.h>
 
 namespace {
 
@@ -17,6 +22,44 @@ struct RunnerArgs {
     Args frame_args;
     int scale = 4;
     int frames = -1;
+    std::array<std::string, 4> webcam_paths;
+};
+
+struct WebcamChannel {
+    int width = 320;
+    int height = 240;
+    FILE* pipe = nullptr;
+    std::vector<std::uint8_t> pending_frame;
+    std::vector<std::uint32_t> pixels;
+    std::size_t pending_bytes = 0;
+    std::mutex mutex;
+    std::thread worker;
+    std::atomic_bool running{false};
+    std::atomic_bool failed{false};
+    std::atomic_bool has_frame{false};
+
+    WebcamChannel() = default;
+    WebcamChannel(const WebcamChannel&) = delete;
+    WebcamChannel& operator=(const WebcamChannel&) = delete;
+
+    ~WebcamChannel() {
+        close();
+    }
+
+    [[nodiscard]] bool loaded() const {
+        return pipe != nullptr && width > 0 && height > 0;
+    }
+
+    void close() {
+        running = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (pipe != nullptr) {
+            pclose(pipe);
+            pipe = nullptr;
+        }
+    }
 };
 
 void print_runner_usage() {
@@ -26,6 +69,7 @@ void print_runner_usage() {
               << "       [--channel0 path] through [--channel3 path] load image inputs\n"
               << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n"
               << "       [--video0 path] through [--video3 path] sample video inputs with ffmpeg\n"
+              << "       [--webcam0 [device]] through [--webcam3 [device]] stream webcam inputs\n"
               << "       [--audio0 path] through [--audio3 path] sample audio inputs with ffmpeg\n"
               << "       [--buffer0 path] through [--buffer3 path] run feedback buffer passes\n";
 }
@@ -139,6 +183,19 @@ std::optional<RunnerArgs> parse_runner_args(int argc, char** argv) {
             args.frame_args.video_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--webcam0" || arg == "--webcam1" || arg == "--webcam2" || arg == "--webcam3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string device = "/dev/video" + std::to_string(channel);
+            if (i + 1 < argc) {
+                const std::string_view possible_device{argv[i + 1]};
+                if (possible_device.empty() || possible_device.front() != '-') {
+                    ++i;
+                    device = std::string{possible_device};
+                }
+            }
+            args.webcam_paths[static_cast<std::size_t>(channel)] = std::move(device);
+            continue;
+        }
         if (arg == "--audio0" || arg == "--audio1" || arg == "--audio2" || arg == "--audio3") {
             const auto value = next();
             if (!value.has_value()) {
@@ -168,6 +225,180 @@ std::optional<RunnerArgs> parse_runner_args(int argc, char** argv) {
         return std::nullopt;
     }
     return args;
+}
+
+bool has_webcam_paths(const RunnerArgs& args) {
+    for (const std::string& path : args.webcam_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool set_pipe_nonblocking(FILE* pipe) {
+    const int fd = fileno(pipe);
+    const int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return false;
+    }
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+
+void pack_webcam_frame(WebcamChannel& webcam) {
+    std::vector<std::uint32_t> packed;
+    packed.resize(static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height));
+    for (int y = 0; y < webcam.height; ++y) {
+        for (int x = 0; x < webcam.width; ++x) {
+            const auto src_pixel =
+                static_cast<std::size_t>(y * webcam.width + (webcam.width - 1 - x));
+            const auto dst_pixel = static_cast<std::size_t>(y * webcam.width + x);
+            const std::uint8_t r = webcam.pending_frame[src_pixel * 4U + 0U];
+            const std::uint8_t g = webcam.pending_frame[src_pixel * 4U + 1U];
+            const std::uint8_t b = webcam.pending_frame[src_pixel * 4U + 2U];
+            const std::uint8_t a = webcam.pending_frame[src_pixel * 4U + 3U];
+            packed[dst_pixel] =
+                (static_cast<std::uint32_t>(a) << 24U) | (static_cast<std::uint32_t>(b) << 16U) |
+                (static_cast<std::uint32_t>(g) << 8U) | static_cast<std::uint32_t>(r);
+        }
+    }
+
+    const std::lock_guard<std::mutex> lock(webcam.mutex);
+    webcam.pixels = std::move(packed);
+    webcam.has_frame = true;
+}
+
+bool read_webcam_initial_frame(WebcamChannel& webcam) {
+    if (webcam.pipe == nullptr) {
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height) * 4U;
+    webcam.pending_frame.resize(frame_bytes);
+    webcam.pending_bytes = 0;
+
+    const int fd = fileno(webcam.pipe);
+    while (webcam.pending_bytes < frame_bytes) {
+        const ssize_t bytes_read = read(fd, webcam.pending_frame.data() + webcam.pending_bytes,
+                                        frame_bytes - webcam.pending_bytes);
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+        webcam.pending_bytes += static_cast<std::size_t>(bytes_read);
+    }
+
+    pack_webcam_frame(webcam);
+    webcam.pending_bytes = 0;
+    return true;
+}
+
+bool drain_webcam_frame(WebcamChannel& webcam);
+
+bool open_webcam_channel(const std::string& device, WebcamChannel& out) {
+    out.close();
+    out.width = 320;
+    out.height = 240;
+    const std::string command =
+        "ffmpeg -v error -fflags nobuffer -flags low_delay -f v4l2 -framerate 30 "
+        "-video_size 320x240 -i " +
+        shell_quote(device) + " -f rawvideo -pix_fmt rgba - 2>/dev/null";
+    out.pipe = popen(command.c_str(), "r");
+    if (out.pipe == nullptr) {
+        std::cerr << "failed to start webcam capture for " << device << '\n';
+        return false;
+    }
+
+    if (!read_webcam_initial_frame(out)) {
+        std::cerr << "failed to read webcam frame from " << device << '\n';
+        pclose(out.pipe);
+        out.pipe = nullptr;
+        return false;
+    }
+    if (!set_pipe_nonblocking(out.pipe)) {
+        std::cerr << "failed to set webcam pipe nonblocking for " << device << '\n';
+        pclose(out.pipe);
+        out.pipe = nullptr;
+        return false;
+    }
+    out.failed = false;
+    out.running = true;
+    out.worker = std::thread([&out]() {
+        while (out.running) {
+            if (!drain_webcam_frame(out)) {
+                out.failed = true;
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+    });
+    return true;
+}
+
+bool drain_webcam_frame(WebcamChannel& webcam) {
+    if (webcam.pipe == nullptr) {
+        return false;
+    }
+
+    const std::size_t frame_bytes =
+        static_cast<std::size_t>(webcam.width) * static_cast<std::size_t>(webcam.height) * 4U;
+    webcam.pending_frame.resize(frame_bytes);
+    const int fd = fileno(webcam.pipe);
+    bool got_complete_frame = false;
+
+    while (true) {
+        const ssize_t bytes_read = read(fd, webcam.pending_frame.data() + webcam.pending_bytes,
+                                        frame_bytes - webcam.pending_bytes);
+        if (bytes_read > 0) {
+            webcam.pending_bytes += static_cast<std::size_t>(bytes_read);
+            if (webcam.pending_bytes == frame_bytes) {
+                pack_webcam_frame(webcam);
+                webcam.pending_bytes = 0;
+                got_complete_frame = true;
+            }
+            continue;
+        }
+
+        if (bytes_read == 0) {
+            return false;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return true;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        return false;
+    }
+
+    return got_complete_frame || webcam.has_frame;
+}
+
+bool update_webcam_channels(ast::ChannelSet& channels,
+                            std::array<WebcamChannel, 4>& webcam_channels, float time) {
+    for (std::size_t i = 0; i < webcam_channels.size(); ++i) {
+        WebcamChannel& webcam = webcam_channels[i];
+        if (webcam.pipe == nullptr) {
+            continue;
+        }
+        if (webcam.failed) {
+            std::cerr << "webcam stream ended on channel " << i << '\n';
+            return false;
+        }
+        channels.image[i].width = webcam.width;
+        channels.image[i].height = webcam.height;
+        channels.image[i].time = time;
+        channels.image[i].sample_rate = 0.0F;
+        channels.image[i].external_pixels = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock(webcam.mutex);
+            channels.image[i].pixels = webcam.pixels;
+        }
+    }
+    return true;
 }
 
 std::optional<wgpu::Surface> make_x11_surface(wgpu::Instance instance, SDL_Window* window) {
@@ -372,10 +603,50 @@ bool present_texture(WebGpuContext& context, wgpu::Surface surface, PresentResou
     return true;
 }
 
+void write_channel_texture(WebGpuContext& context, wgpu::Texture texture,
+                           const ast::ImageChannel& channel) {
+    if (!channel.loaded()) {
+        return;
+    }
+
+    constexpr std::uint32_t bytes_per_row_alignment = 256;
+    const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(channel.width) * 4U;
+    const std::uint32_t bytes_per_row = align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    std::vector<std::uint8_t> padded(static_cast<std::size_t>(bytes_per_row) *
+                                     static_cast<std::size_t>(channel.height));
+    const std::vector<std::uint32_t>& pixels = channel.pixel_data();
+    for (int y = 0; y < channel.height; ++y) {
+        std::uint8_t* dst = padded.data() + static_cast<std::size_t>(y) * bytes_per_row;
+        const auto* src = reinterpret_cast<const std::uint8_t*>(
+            pixels.data() + static_cast<std::size_t>(y * channel.width));
+        std::memcpy(dst, src, static_cast<std::size_t>(unpadded_bytes_per_row));
+    }
+
+    wgpu::ImageCopyTexture destination{};
+    destination.texture = texture;
+    wgpu::TextureDataLayout layout{};
+    layout.bytesPerRow = bytes_per_row;
+    layout.rowsPerImage = static_cast<std::uint32_t>(channel.height);
+    context.queue.writeTexture(destination, padded.data(), padded.size(), layout,
+                               wgpu::Extent3D(static_cast<std::uint32_t>(channel.width),
+                                              static_cast<std::uint32_t>(channel.height), 1));
+}
+
+void upload_webcam_channels(WebGpuContext& context, const RunnerArgs& runner_args,
+                            const ast::ChannelSet& channels,
+                            std::array<wgpu::Texture, 4>& textures) {
+    for (std::size_t i = 0; i < runner_args.webcam_paths.size(); ++i) {
+        if (!runner_args.webcam_paths[i].empty()) {
+            write_channel_texture(context, textures[i], channels.image[i]);
+        }
+    }
+}
+
 bool render_present_loop(WebGpuContext& context, wgpu::Surface surface, PresentResources& present,
                          const ast::Program& image_program,
                          const std::array<std::optional<ast::Program>, 4>& buffer_programs,
-                         const RunnerArgs& runner_args, const ast::ChannelSet& base_channels) {
+                         const RunnerArgs& runner_args, ast::ChannelSet base_channels,
+                         std::array<WebcamChannel, 4>& webcam_channels) {
     const Args& args = runner_args.frame_args;
     std::array<wgpu::Texture, 4> base_textures = make_base_channel_textures(context, base_channels);
     std::array<wgpu::TextureView, 4> base_views = make_views(base_textures);
@@ -408,6 +679,13 @@ bool render_present_loop(WebGpuContext& context, wgpu::Surface surface, PresentR
         }
 
         const Args frame_args = args_for_frame(args, offset);
+        if (has_webcam_paths(runner_args)) {
+            if (!update_webcam_channels(base_channels, webcam_channels, frame_args.time)) {
+                return false;
+            }
+            upload_webcam_channels(context, runner_args, base_channels, base_textures);
+        }
+
         ast::ChannelSet previous_channels = base_channels;
         std::array<wgpu::TextureView, 4> previous_views = base_views;
         for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
@@ -495,6 +773,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::array<WebcamChannel, 4> webcam_channels;
+    for (std::size_t i = 0; i < runner_args.webcam_paths.size(); ++i) {
+        if (!runner_args.webcam_paths[i].empty() &&
+            !open_webcam_channel(runner_args.webcam_paths[i], webcam_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    if (!update_webcam_channels(channels, webcam_channels, runner_args.frame_args.time)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
     WebGpuContext context;
     if (!make_context(context)) {
         IMG_Quit();
@@ -549,7 +842,7 @@ int main(int argc, char** argv) {
     PresentResources present = *maybe_present;
 
     const bool ok = render_present_loop(context, *surface, present, assembled.program,
-                                        buffer_programs, runner_args, channels);
+                                        buffer_programs, runner_args, channels, webcam_channels);
     surface->unconfigure();
     (void)error_callback;
     SDL_DestroyWindow(window);
