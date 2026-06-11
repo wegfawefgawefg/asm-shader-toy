@@ -38,13 +38,13 @@ describe("template projects", () => {
     expect(life.settings.buffers?.[0]?.file).toBe("examples/buffers/life_buffer.asm");
   });
 
-  test("keeps pixelated planet custom render settings", () => {
+  test("keeps pixelated planet step budget without forcing a size", () => {
     const pixelated = makeTemplateProject(
       templateProjects.find((template) => template.id === "examples/raymarch/pixelated_planet.asm")!
     );
 
-    expect(pixelated.settings.size).toBe("506x632");
-    expect(pixelated.settings.scale).toBe(1);
+    expect(pixelated.settings.size).toBe("gb");
+    expect(pixelated.settings.scale).toBe(4);
     expect(pixelated.settings.maxSteps).toBe(16384);
     expect(pixelated.settings.wgsl).toContain("steps >= 16384");
   });

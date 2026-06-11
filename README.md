@@ -128,7 +128,7 @@ Specific examples:
 
 ```sh
 ./build/asm-shader-toy examples/basics/plasma.asm --size gba --scale 4
-./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --size 253x316 --scale 2
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --size gba --scale 4
 ./build/asm-shader-toy examples/buffers/life_display.asm \
   --buffer0 examples/buffers/life_buffer.asm \
   --size gba \
@@ -237,7 +237,7 @@ Generated noise:
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 10
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
-  --size 253x316 \
+  --size gba \
   --frames 90 \
   --save-frame /tmp/pixel_planet.png
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --measure-fps 120

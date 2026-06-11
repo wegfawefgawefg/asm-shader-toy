@@ -85,7 +85,7 @@ Export a still frame:
 
 ```sh
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
-  --size 506x632 \
+  --size gba \
   --frames 90 \
   --save-frame /tmp/pixel_planet.png
 ```
