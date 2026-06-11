@@ -189,6 +189,17 @@ function setDiagnostics(message = "No errors.", kind: "ok" | "error" = "ok"): vo
 function setError(message: string): void {
   setDiagnostics(message, "error");
 }
+
+function confirmButton(button: HTMLButtonElement, text: string): void {
+  const original = button.textContent ?? "";
+  button.textContent = text;
+  button.disabled = true;
+  window.setTimeout(() => {
+    button.textContent = original;
+    button.disabled = false;
+  }, 1200);
+}
+
 let suppressAsmChange = false;
 let suppressWgslChange = false;
 const asmEditor = createAsmEditor(asmEditorHost, () => {
@@ -1141,10 +1152,15 @@ appRoot.addEventListener("click", (event) => {
     saveFrame();
   }
   if (action === "copy-frame") {
-    void copyFramePng().catch((error) => {
-      setError(error instanceof Error ? error.message : String(error));
-      statusText.textContent = "Copy PNG failed";
-    });
+    const button = event.target as HTMLButtonElement;
+    void copyFramePng()
+      .then(() => {
+        confirmButton(button, "Copied");
+      })
+      .catch((error) => {
+        setError(error instanceof Error ? error.message : String(error));
+        statusText.textContent = "Copy PNG failed";
+      });
   }
   if (action === "record-video") {
     const duration = Number(window.prompt("Record seconds", "5") ?? "");
@@ -1177,13 +1193,23 @@ appRoot.addEventListener("click", (event) => {
     URL.revokeObjectURL(link.href);
   }
   if (action === "share") {
+    const button = event.target as HTMLButtonElement;
     saveCurrentFile();
-    void encodeProject(state.project).then((hash) => {
-      const url = `${location.origin}${location.pathname}${hash}`;
-      return navigator.clipboard.writeText(url).then(() => {
-        statusText.textContent = "Share URL copied";
+    void encodeProject(state.project)
+      .then((hash) => {
+        if (!navigator.clipboard) {
+          throw new Error("Clipboard writes are not available in this browser.");
+        }
+        const url = `${location.origin}${location.pathname}${hash}`;
+        return navigator.clipboard.writeText(url).then(() => {
+          statusText.textContent = "Share URL copied";
+          confirmButton(button, "Copied");
+        });
+      })
+      .catch((error) => {
+        setError(error instanceof Error ? error.message : String(error));
+        statusText.textContent = "Share failed";
       });
-    });
   }
   if (action === "noise-channel") {
     const index = Number((event.target as HTMLElement).dataset.channel);
