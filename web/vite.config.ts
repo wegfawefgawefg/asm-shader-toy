@@ -5,6 +5,7 @@ const rootDir = resolve(__dirname, "..");
 const examplesDir = resolve(rootDir, "examples");
 
 export default defineConfig({
+  base: process.env.VITE_BASE ?? "/",
   plugins: [
     {
       name: "asm-shader-toy-example-reload",

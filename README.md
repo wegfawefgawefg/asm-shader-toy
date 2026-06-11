@@ -147,6 +147,10 @@ editor, import/export JSON, compressed share URLs, and a WebGPU preview canvas
 with nearest-neighbor scaling. The preview has pause, reset, FPS display, and
 PNG frame export controls. ASM and WGSL edits hot-compile after a short debounce.
 
+Hosted build:
+
+https://wegfawefgawefg.github.io/asm-shader-toy/
+
 Run it locally:
 
 ```sh
