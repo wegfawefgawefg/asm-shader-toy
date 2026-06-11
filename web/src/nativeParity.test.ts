@@ -52,14 +52,15 @@ out tex0_r, tmp4, tmp6, tex0_a
   {
     name: "local include and const block",
     main: `.include "math.inc"
-out r48, doubled, 0.0, 1.0
+out shade, doubled, 0.0, 1.0
 `,
     files: {
       "math.inc": `.consts
 mov base, 0.25
 add doubled, base, base
 .end
-mov r48, doubled
+.alias shade, r48
+mov shade, doubled
 `
     },
     tokens: ["ast_unorm(0.5)", "textureStore"]

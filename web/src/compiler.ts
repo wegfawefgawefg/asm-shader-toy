@@ -579,7 +579,7 @@ function parseSource(
       continue;
     }
     if (line.startsWith(".alias")) {
-      const parts = line.split(/\s+/);
+      const parts = line.split(/[,\s]+/).filter(Boolean);
       const match = /^r(\d+)$/.exec(parts[2] ?? "");
       if (parts.length !== 3 || !match) {
         addDiagnostic(diagnostics, path, lineNumber, "invalid alias");

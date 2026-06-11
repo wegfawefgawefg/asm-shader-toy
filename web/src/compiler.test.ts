@@ -161,6 +161,30 @@ out8 value, 0, 0, 255
     expect(result.wgsl).toContain("ast_byte(128.0)");
   });
 
+  test("compiles comma aliases from local includes", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "main.asm",
+          content: `.include "aliases.inc"
+out shade, 0.0, 0.0, 1.0
+`
+        },
+        {
+          path: "aliases.inc",
+          content: `.alias shade, r48
+mov shade, 0.5
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("r[48]");
+    expect(result.wgsl).toContain("ast_unorm(r[48])");
+  });
+
   test("compiles a feedback buffer project pair", () => {
     const files = [
       {
