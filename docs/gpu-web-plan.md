@@ -31,6 +31,8 @@ is an accelerating backend for programs that fit the validated subset.
   It currently targets deterministic arithmetic, unary math, comparisons,
   direct branches, bounded program-counter loops, `out`, `out8`, `ret`, and
   `halt`.
+- The native CLI exposes that compiler through `--emit-wgsl path|-`, which
+  writes WGSL and exits before SDL/media setup.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
   falling back. Texture/media/channel metadata, live input query ops, calls,
   native WebGPU execution, and the browser runner are still unimplemented.

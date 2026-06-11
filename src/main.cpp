@@ -1,5 +1,6 @@
 #include "ast/assembler.hpp"
 #include "ast/runtime.hpp"
+#include "ast/wgsl.hpp"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -17,6 +18,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -42,6 +44,8 @@ struct Args {
     bool show_fps = false;
     int measure_fps_frames = 0;
     std::string save_frame_path;
+    bool emit_wgsl = false;
+    std::string emit_wgsl_path;
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> video_paths;
     std::array<std::string, 4> webcam_paths;
@@ -353,6 +357,15 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             continue;
         }
+        if (arg == "--emit-wgsl") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.emit_wgsl = true;
+            args.emit_wgsl_path = std::string{*value};
+            continue;
+        }
         if (arg == "--no-graphics" || arg == "--nographics") {
             args.no_graphics = true;
             if (args.frames < 0) {
@@ -479,6 +492,7 @@ void print_usage() {
         << "       --dry-run assembles and validates image inputs without rendering\n"
         << "       --no-graphics --frames N renders N CPU frames without a window\n"
         << "       --save-frame path.png renders one headless frame to a PNG\n"
+        << "       --emit-wgsl path|'-' compiles the supported GPU subset to WGSL and exits\n"
         << "       --fps shows a small FPS overlay in graphical runs\n"
         << "       --measure-fps N renders N CPU frames and prints average FPS\n"
         << "       graphical runs hot reload the program and its includes on save\n";
@@ -1377,6 +1391,21 @@ bool assemble_buffers(const Args& args,
     return true;
 }
 
+bool write_text_output(const std::string& path, const std::string& text) {
+    if (path == "-") {
+        std::cout << text;
+        return true;
+    }
+
+    std::ofstream output{path};
+    if (!output) {
+        std::cerr << "could not open WGSL output path: " << path << '\n';
+        return false;
+    }
+    output << text;
+    return static_cast<bool>(output);
+}
+
 void ensure_buffer_storage(const Args& args,
                            std::array<std::vector<std::uint32_t>, 4>& previous_buffers,
                            std::array<std::vector<std::uint32_t>, 4>& current_buffers) {
@@ -1583,6 +1612,19 @@ int main(int argc, char** argv) {
     if (!assembled.ok()) {
         print_diagnostics(assembled.diagnostics);
         return 1;
+    }
+    if (args.emit_wgsl) {
+        if (has_buffer_paths(args)) {
+            std::cerr << "--emit-wgsl does not support feedback buffer passes yet\n";
+            return 1;
+        }
+        const ast::WgslCompileResult wgsl =
+            ast::compile_wgsl(assembled.program, ast::WgslOptions{args.max_steps});
+        if (!wgsl.ok()) {
+            print_diagnostics(wgsl.diagnostics);
+            return 1;
+        }
+        return write_text_output(args.emit_wgsl_path, wgsl.source) ? 0 : 1;
     }
     std::array<std::optional<ast::AssembleResult>, 4> buffer_programs;
     if (!assemble_buffers(args, buffer_programs)) {
