@@ -62,6 +62,11 @@ headless renderer for deterministic single-image programs:
   --size gba \
   --scale 4
 
+./build-webgpu-probe/ast-webgpu-run examples/microphone/mic_scope.asm \
+  --mic0 \
+  --size gba \
+  --scale 4
+
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ```
 
@@ -81,8 +86,9 @@ to the window with nearest-neighbor integer scaling. It currently supports the
 same static image, generated noise, deterministic video/audio file, and feedback
 buffer inputs as `ast-webgpu-frame`. It also supports live mirrored webcam
 channels by streaming frames through ffmpeg and uploading the latest complete
-frame into the GPU channel texture before dispatch. Live microphone channels are
-still future native WebGPU work.
+frame into the GPU channel texture before dispatch. Live microphone channels use
+the same ffmpeg/PulseAudio capture path and `512x2` waveform/spectrum texture
+shape as the CPU runner.
 
 `ast-webgpu-surface-probe` is a narrower presentation smoke test. On Linux/X11,
 it opens an SDL window, creates a WebGPU surface from the native window handle,

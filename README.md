@@ -93,6 +93,10 @@ Build the optional native WebGPU tools:
   --webcam0 \
   --size gba \
   --scale 4
+./build-webgpu-probe/ast-webgpu-run examples/microphone/mic_scope.asm \
+  --mic0 \
+  --size gba \
+  --scale 4
 ./build-webgpu-probe/ast-webgpu-surface-probe --size 160x90 --frames 60 --scale 2
 ./scripts/validate_webgpu_frame.sh
 ```
@@ -107,7 +111,8 @@ Audio-file channels are decoded into the same 512x2 waveform/spectrum texture
 shape as the CPU runner.
 The `ast-webgpu-run` tool opens an SDL window, renders emitted asm WGSL on the
 GPU, and presents the intermediate texture with nearest-neighbor integer
-scaling. It can also stream mirrored webcam channels into GPU textures.
+scaling. It can also stream mirrored webcam and microphone channels into GPU
+textures.
 The surface probe opens an SDL window, creates a native WebGPU surface, clears
 it, and presents frames.
 

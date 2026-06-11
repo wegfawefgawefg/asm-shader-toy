@@ -23,6 +23,7 @@ struct RunnerArgs {
     int scale = 4;
     int frames = -1;
     std::array<std::string, 4> webcam_paths;
+    std::array<std::string, 4> mic_paths;
 };
 
 struct WebcamChannel {
@@ -62,6 +63,41 @@ struct WebcamChannel {
     }
 };
 
+struct MicrophoneChannel {
+    int sample_rate = audio_sample_rate;
+    FILE* pipe = nullptr;
+    std::vector<float> samples;
+    std::vector<std::uint8_t> read_buffer;
+    std::vector<std::uint32_t> pixels;
+    std::mutex mutex;
+    std::thread worker;
+    std::atomic_bool running{false};
+    std::atomic_bool failed{false};
+
+    MicrophoneChannel() = default;
+    MicrophoneChannel(const MicrophoneChannel&) = delete;
+    MicrophoneChannel& operator=(const MicrophoneChannel&) = delete;
+
+    ~MicrophoneChannel() {
+        close();
+    }
+
+    [[nodiscard]] bool loaded() const {
+        return pipe != nullptr && sample_rate > 0 && !pixels.empty();
+    }
+
+    void close() {
+        running = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (pipe != nullptr) {
+            pclose(pipe);
+            pipe = nullptr;
+        }
+    }
+};
+
 void print_runner_usage() {
     std::cerr << "usage: ast-webgpu-run program.asm [--size gba|240x160] [--scale N] "
                  "[--frames N]\n"
@@ -71,6 +107,7 @@ void print_runner_usage() {
               << "       [--video0 path] through [--video3 path] sample video inputs with ffmpeg\n"
               << "       [--webcam0 [device]] through [--webcam3 [device]] stream webcam inputs\n"
               << "       [--audio0 path] through [--audio3 path] sample audio inputs with ffmpeg\n"
+              << "       [--mic0 [device]] through [--mic3 [device]] stream microphone inputs\n"
               << "       [--buffer0 path] through [--buffer3 path] run feedback buffer passes\n";
 }
 
@@ -205,6 +242,19 @@ std::optional<RunnerArgs> parse_runner_args(int argc, char** argv) {
             args.frame_args.audio_paths[static_cast<std::size_t>(channel)] = std::string{*value};
             continue;
         }
+        if (arg == "--mic0" || arg == "--mic1" || arg == "--mic2" || arg == "--mic3") {
+            const int channel = static_cast<int>(arg.back() - '0');
+            std::string device = "default";
+            if (i + 1 < argc) {
+                const std::string_view possible_device{argv[i + 1]};
+                if (possible_device.empty() || possible_device.front() != '-') {
+                    ++i;
+                    device = std::string{possible_device};
+                }
+            }
+            args.mic_paths[static_cast<std::size_t>(channel)] = std::move(device);
+            continue;
+        }
         if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" || arg == "--buffer3") {
             const auto value = next();
             if (!value.has_value()) {
@@ -229,6 +279,15 @@ std::optional<RunnerArgs> parse_runner_args(int argc, char** argv) {
 
 bool has_webcam_paths(const RunnerArgs& args) {
     for (const std::string& path : args.webcam_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_mic_paths(const RunnerArgs& args) {
+    for (const std::string& path : args.mic_paths) {
         if (!path.empty()) {
             return true;
         }
@@ -396,6 +455,93 @@ bool update_webcam_channels(ast::ChannelSet& channels,
         {
             const std::lock_guard<std::mutex> lock(webcam.mutex);
             channels.image[i].pixels = webcam.pixels;
+        }
+    }
+    return true;
+}
+
+void update_microphone_texture_locked(MicrophoneChannel& mic) {
+    build_audio_texture(mic.samples, mic.sample_rate, 0.0, mic.pixels);
+}
+
+bool open_microphone_channel(const std::string& device, MicrophoneChannel& out) {
+    out.close();
+    out.sample_rate = audio_sample_rate;
+    out.samples.assign(static_cast<std::size_t>(audio_texture_width), 0.0F);
+    update_microphone_texture_locked(out);
+
+    const std::string command = "ffmpeg -v error -f pulse -i " + shell_quote(device) +
+                                " -ac 1 -ar 44100 -f f32le - 2>/dev/null";
+    out.pipe = popen(command.c_str(), "r");
+    if (out.pipe == nullptr) {
+        std::cerr << "failed to start microphone capture for " << device << '\n';
+        return false;
+    }
+    if (!set_pipe_nonblocking(out.pipe)) {
+        std::cerr << "failed to set microphone pipe nonblocking for " << device << '\n';
+        out.close();
+        return false;
+    }
+
+    out.read_buffer.resize(4096);
+    out.failed = false;
+    out.running = true;
+    out.worker = std::thread([&out]() {
+        std::vector<float> chunk;
+        while (out.running) {
+            const ssize_t bytes_read =
+                read(fileno(out.pipe), out.read_buffer.data(), out.read_buffer.size());
+            if (bytes_read > 0) {
+                const std::size_t sample_count =
+                    static_cast<std::size_t>(bytes_read) / sizeof(float);
+                chunk.resize(sample_count);
+                std::memcpy(chunk.data(), out.read_buffer.data(), sample_count * sizeof(float));
+                {
+                    const std::lock_guard<std::mutex> lock(out.mutex);
+                    out.samples.insert(out.samples.end(), chunk.begin(), chunk.end());
+                    const std::size_t keep = static_cast<std::size_t>(audio_texture_width);
+                    if (out.samples.size() > keep) {
+                        out.samples.erase(out.samples.begin(),
+                                          out.samples.end() - static_cast<std::ptrdiff_t>(keep));
+                    }
+                    update_microphone_texture_locked(out);
+                }
+                continue;
+            }
+            if (bytes_read == 0) {
+                out.failed = true;
+                return;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+                continue;
+            }
+            out.failed = true;
+            return;
+        }
+    });
+    return true;
+}
+
+bool update_microphone_channels(ast::ChannelSet& channels,
+                                std::array<MicrophoneChannel, 4>& mic_channels, float time) {
+    for (std::size_t i = 0; i < mic_channels.size(); ++i) {
+        MicrophoneChannel& mic = mic_channels[i];
+        if (mic.pipe == nullptr) {
+            continue;
+        }
+        if (mic.failed) {
+            std::cerr << "microphone stream ended on channel " << i << '\n';
+            return false;
+        }
+        channels.image[i].width = audio_texture_width;
+        channels.image[i].height = audio_texture_height;
+        channels.image[i].time = time;
+        channels.image[i].sample_rate = static_cast<float>(mic.sample_rate);
+        channels.image[i].external_pixels = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock(mic.mutex);
+            channels.image[i].pixels = mic.pixels;
         }
     }
     return true;
@@ -642,11 +788,22 @@ void upload_webcam_channels(WebGpuContext& context, const RunnerArgs& runner_arg
     }
 }
 
+void upload_microphone_channels(WebGpuContext& context, const RunnerArgs& runner_args,
+                                const ast::ChannelSet& channels,
+                                std::array<wgpu::Texture, 4>& textures) {
+    for (std::size_t i = 0; i < runner_args.mic_paths.size(); ++i) {
+        if (!runner_args.mic_paths[i].empty()) {
+            write_channel_texture(context, textures[i], channels.image[i]);
+        }
+    }
+}
+
 bool render_present_loop(WebGpuContext& context, wgpu::Surface surface, PresentResources& present,
                          const ast::Program& image_program,
                          const std::array<std::optional<ast::Program>, 4>& buffer_programs,
                          const RunnerArgs& runner_args, ast::ChannelSet base_channels,
-                         std::array<WebcamChannel, 4>& webcam_channels) {
+                         std::array<WebcamChannel, 4>& webcam_channels,
+                         std::array<MicrophoneChannel, 4>& mic_channels) {
     const Args& args = runner_args.frame_args;
     std::array<wgpu::Texture, 4> base_textures = make_base_channel_textures(context, base_channels);
     std::array<wgpu::TextureView, 4> base_views = make_views(base_textures);
@@ -684,6 +841,12 @@ bool render_present_loop(WebGpuContext& context, wgpu::Surface surface, PresentR
                 return false;
             }
             upload_webcam_channels(context, runner_args, base_channels, base_textures);
+        }
+        if (has_mic_paths(runner_args)) {
+            if (!update_microphone_channels(base_channels, mic_channels, frame_args.time)) {
+                return false;
+            }
+            upload_microphone_channels(context, runner_args, base_channels, base_textures);
         }
 
         ast::ChannelSet previous_channels = base_channels;
@@ -788,6 +951,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::array<MicrophoneChannel, 4> mic_channels;
+    for (std::size_t i = 0; i < runner_args.mic_paths.size(); ++i) {
+        if (!runner_args.mic_paths[i].empty() &&
+            !open_microphone_channel(runner_args.mic_paths[i], mic_channels[i])) {
+            IMG_Quit();
+            SDL_Quit();
+            return 1;
+        }
+    }
+    if (!update_microphone_channels(channels, mic_channels, runner_args.frame_args.time)) {
+        IMG_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
     WebGpuContext context;
     if (!make_context(context)) {
         IMG_Quit();
@@ -841,8 +1019,9 @@ int main(int argc, char** argv) {
     }
     PresentResources present = *maybe_present;
 
-    const bool ok = render_present_loop(context, *surface, present, assembled.program,
-                                        buffer_programs, runner_args, channels, webcam_channels);
+    const bool ok =
+        render_present_loop(context, *surface, present, assembled.program, buffer_programs,
+                            runner_args, channels, webcam_channels, mic_channels);
     surface->unconfigure();
     (void)error_callback;
     SDL_DestroyWindow(window);

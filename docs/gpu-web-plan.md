@@ -60,10 +60,10 @@ is an accelerating backend for programs that fit the validated subset.
   native WebGPU, and presents the intermediate texture with nearest-neighbor
   integer scaling. It supports the same static image, generated noise,
   deterministic video/audio file, and feedback-buffer inputs as
-  `ast-webgpu-frame`, plus live mirrored webcam channels uploaded each frame.
+  `ast-webgpu-frame`, plus live mirrored webcam and microphone channels uploaded
+  each frame.
 - The WGSL emitter returns diagnostics for unsupported ops instead of silently
-  falling back. Native WebGPU live microphone media channels are still
-  unimplemented.
+  falling back.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
