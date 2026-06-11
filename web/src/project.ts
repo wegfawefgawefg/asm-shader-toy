@@ -73,7 +73,7 @@ export function makeDefaultProject(): ProjectBundle {
     settings: {
       main: "main.asm",
       wgsl: compiled.wgsl,
-      size: "gba",
+      size: "gb",
       scale: 4,
       channels: [
         { kind: "fallback", name: "channel0", width: 1, height: 1 },

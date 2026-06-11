@@ -394,6 +394,7 @@ canvas {
   image-rendering: pixelated;
   border: 1px solid #2b3138;
   background: #000;
+  touch-action: none;
 }
 
 .status {

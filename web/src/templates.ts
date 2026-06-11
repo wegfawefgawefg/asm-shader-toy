@@ -55,7 +55,7 @@ function single(path: string, content: string, extras: Partial<TemplateProject> 
     name: path.replace("examples/", "").replace(".asm", ""),
     files: [{ path, content }, ...commonFiles],
     main: path,
-    size: "gba",
+    size: "gb",
     scale: 4,
     ...extras
   };

@@ -51,6 +51,17 @@ export type ChannelRuntimeSource = {
   mirrored?: boolean;
 };
 
+export type BrowserInputState = {
+  mouseX: number;
+  mouseY: number;
+  mouseDown: number;
+  mouseClickX: number;
+  mouseClickY: number;
+  mouseButtons: number[];
+  mouseWheelX: number;
+  mouseWheelY: number;
+};
+
 const renderShader = `
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
@@ -193,7 +204,8 @@ function writeUniforms(
   settings: ProjectSettings,
   frame: number,
   start: number,
-  channelSources: ReadonlyMap<number, ChannelRuntimeSource>
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource>,
+  inputState?: BrowserInputState
 ): void {
   const size = parseSize(settings.size);
   const values = new Float32Array(uniformFloatCount);
@@ -203,6 +215,11 @@ function writeUniforms(
   values[2] = frame;
   values[3] = size.width;
   values[4] = size.height;
+  values[5] = inputState?.mouseDown ? inputState.mouseX : 0;
+  values[6] = inputState?.mouseDown ? inputState.mouseY : 0;
+  values[7] = inputState?.mouseDown ?? 0;
+  values[8] = inputState?.mouseClickX ?? 0;
+  values[9] = inputState?.mouseClickY ?? 0;
   values[13] = 1;
   for (let channel = 0; channel < 4; ++channel) {
     const metadata = settings.channels[channel] ?? { width: 1, height: 1 };
@@ -223,6 +240,13 @@ function writeUniforms(
           : 0;
     values[offset + 3] = metadata.sampleRate ?? 0;
   }
+  const mouseButtonOffset = uniformChannelOffset + 16 + 512;
+  for (let index = 0; index < Math.min(8, inputState?.mouseButtons.length ?? 0); ++index) {
+    values[mouseButtonOffset + index] = inputState?.mouseButtons[index] ?? 0;
+  }
+  const mouseWheelOffset = mouseButtonOffset + 8;
+  values[mouseWheelOffset] = inputState?.mouseWheelX ?? 0;
+  values[mouseWheelOffset + 1] = inputState?.mouseWheelY ?? 0;
   device.queue.writeBuffer(buffer, 0, values);
 }
 
@@ -441,12 +465,13 @@ export function renderFrame(
   settings: ProjectSettings,
   frame: number,
   start: number,
-  channelSources: ReadonlyMap<number, ChannelRuntimeSource> = new Map()
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource> = new Map(),
+  inputState?: BrowserInputState
 ): void {
   const { device } = context;
   const size = parseSize(settings.size);
   updateLiveChannelTextures(context, program, channelSources);
-  writeUniforms(device, program.uniformBuffer, settings, frame, start, channelSources);
+  writeUniforms(device, program.uniformBuffer, settings, frame, start, channelSources, inputState);
 
   const baseChannelViews = program.channelTextures.map((texture) => texture.createView());
   const readIndex = program.bufferReadIndex;

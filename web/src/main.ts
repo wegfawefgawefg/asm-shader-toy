@@ -17,6 +17,7 @@ import {
   destroyProgram,
   initWebGpu,
   renderFrame,
+  type BrowserInputState,
   type ChannelRuntimeSource,
   type GpuContext,
   type ProgramState
@@ -67,6 +68,16 @@ async function main(): Promise<void> {
     fpsStart: performance.now() / 1000
   };
   const channelSources = new Map<number, LiveChannelSource>();
+  const inputState: BrowserInputState = {
+    mouseX: 0,
+    mouseY: 0,
+    mouseDown: 0,
+    mouseClickX: 0,
+    mouseClickY: 0,
+    mouseButtons: Array.from({ length: 8 }, () => 0),
+    mouseWheelX: 0,
+    mouseWheelY: 0
+  };
 
   const loaded = await decodeProject(location.hash);
   if (loaded) {
@@ -211,6 +222,20 @@ function syncCanvasSize(): void {
   const size = parseSize(state.project.settings.size);
   canvas.width = size.width * state.project.settings.scale;
   canvas.height = size.height * state.project.settings.scale;
+}
+
+function shaderMousePosition(event: PointerEvent | MouseEvent): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const size = parseSize(state.project.settings.size);
+  const x = Math.max(0, Math.min(size.width - 1, ((event.clientX - rect.left) / rect.width) * size.width));
+  const y = Math.max(0, Math.min(size.height - 1, ((event.clientY - rect.top) / rect.height) * size.height));
+  return { x, y };
+}
+
+function setMousePosition(event: PointerEvent | MouseEvent): void {
+  const position = shaderMousePosition(event);
+  inputState.mouseX = position.x;
+  inputState.mouseY = position.y;
 }
 
 function renderProjectUi(): void {
@@ -711,7 +736,9 @@ async function compileAsm(): Promise<void> {
 
 function tick(): void {
   if (state.running && gpuContext && program) {
-    renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources);
+    renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources, inputState);
+    inputState.mouseWheelX = 0;
+    inputState.mouseWheelY = 0;
     if (gpuContext.errors.length > 0) {
       diagnostics.textContent = gpuContext.errors.join("\n");
       statusText.textContent = "WebGPU error";
@@ -789,6 +816,44 @@ appRoot.addEventListener("input", (event) => {
     bufferSettings()[index] = target.value ? { file: target.value, wgsl: "" } : null;
     scheduleCompile(compileAsm);
   }
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  setMousePosition(event);
+});
+
+canvas.addEventListener("pointerdown", (event) => {
+  canvas.setPointerCapture(event.pointerId);
+  setMousePosition(event);
+  inputState.mouseDown = 1;
+  inputState.mouseClickX = inputState.mouseX;
+  inputState.mouseClickY = inputState.mouseY;
+  inputState.mouseButtons[Math.max(0, Math.min(7, event.button))] = 1;
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  setMousePosition(event);
+  inputState.mouseButtons[Math.max(0, Math.min(7, event.button))] = 0;
+  inputState.mouseDown = inputState.mouseButtons.some((button) => button !== 0) ? 1 : 0;
+});
+
+canvas.addEventListener("pointercancel", () => {
+  inputState.mouseButtons.fill(0);
+  inputState.mouseDown = 0;
+});
+
+canvas.addEventListener("pointerleave", () => {
+  inputState.mouseDown = inputState.mouseButtons.some((button) => button !== 0) ? 1 : 0;
+});
+
+canvas.addEventListener("wheel", (event) => {
+  inputState.mouseWheelX += event.deltaX;
+  inputState.mouseWheelY += event.deltaY;
+  event.preventDefault();
+});
+
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
 });
 
 appRoot.addEventListener("click", (event) => {
