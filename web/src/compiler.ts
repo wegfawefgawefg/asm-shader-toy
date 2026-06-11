@@ -9,6 +9,11 @@ export type CompileResult = {
   diagnostics: CompileDiagnostic[];
 };
 
+export type GlslCompileResult = {
+  glsl: string;
+  diagnostics: CompileDiagnostic[];
+};
+
 type Operand = { kind: "register"; reg: number } | { kind: "immediate"; value: number };
 
 type Instruction = {
@@ -690,11 +695,23 @@ function readOperand(operand: Operand): string {
   return operand.kind === "register" ? `r[${operand.reg}]` : wgslFloat(operand.value);
 }
 
+function readGlslOperand(operand: Operand): string {
+  return operand.kind === "register" ? `r[${operand.reg}]` : wgslFloat(operand.value);
+}
+
 function readI32Operand(operand: Operand): string {
   return operand.kind === "register" ? `i32(${readOperand(operand)})` : String(Math.trunc(operand.value));
 }
 
+function readGlslIntOperand(operand: Operand): string {
+  return operand.kind === "register" ? `int(${readGlslOperand(operand)})` : String(Math.trunc(operand.value));
+}
+
 function writeRegister(operand: Operand, expression: string): string {
+  return operand.kind === "register" ? `r[${operand.reg}] = ${expression};` : "";
+}
+
+function writeGlslRegister(operand: Operand, expression: string): string {
   return operand.kind === "register" ? `r[${operand.reg}] = ${expression};` : "";
 }
 
@@ -1097,4 +1114,277 @@ export function compileAsmToWgsl(files: ProjectSource[], main: string, maxSteps 
 }
 `;
   return { wgsl, diagnostics: [] };
+}
+
+function glslHeader(maxSteps: number): string {
+  return `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+out vec4 fragColor;
+
+uniform float ast_time;
+uniform float ast_time_delta;
+uniform float ast_frame;
+uniform float ast_width;
+uniform float ast_height;
+uniform float ast_mouse_x;
+uniform float ast_mouse_y;
+uniform float ast_mouse_down;
+uniform float ast_mouse_click_x;
+uniform float ast_mouse_click_y;
+uniform float ast_wall_clock_seconds;
+uniform float ast_year;
+uniform float ast_month;
+uniform float ast_day;
+uniform vec4 ast_channel0;
+uniform vec4 ast_channel1;
+uniform vec4 ast_channel2;
+uniform vec4 ast_channel3;
+uniform vec4 ast_keys[128];
+uniform vec4 ast_mouse_buttons[2];
+uniform vec4 ast_mouse_wheel;
+uniform vec4 ast_gamepad_buttons[8];
+uniform vec4 ast_gamepad_axes[4];
+uniform sampler2D channel0_texture;
+uniform sampler2D channel1_texture;
+uniform sampler2D channel2_texture;
+uniform sampler2D channel3_texture;
+
+float ast_safe_div(float a, float b) { if (abs(b) <= 0.000001) { return 0.0; } return a / b; }
+float ast_mod(float a, float b) { if (abs(b) <= 0.000001) { return 0.0; } return a - floor(a / b) * b; }
+bool ast_eq(float a, float b) { return abs(a - b) <= 0.000001; }
+float ast_unorm(float v) { return clamp(v, 0.0, 1.0); }
+float ast_byte(float v) { return clamp(v, 0.0, 255.0) / 255.0; }
+vec4 ast_channel_meta(int channel) {
+    if (channel == 0) { return ast_channel0; }
+    if (channel == 1) { return ast_channel1; }
+    if (channel == 2) { return ast_channel2; }
+    if (channel == 3) { return ast_channel3; }
+    return vec4(0.0);
+}
+vec4 ast_channel_load(int channel, ivec2 coord) {
+    if (channel == 0) { return texelFetch(channel0_texture, coord, 0); }
+    if (channel == 1) { return texelFetch(channel1_texture, coord, 0); }
+    if (channel == 2) { return texelFetch(channel2_texture, coord, 0); }
+    if (channel == 3) { return texelFetch(channel3_texture, coord, 0); }
+    return vec4(0.0);
+}
+float ast_packed_vec4_read(vec4 value, int lane) {
+    if (lane == 0) { return value.x; }
+    if (lane == 1) { return value.y; }
+    if (lane == 2) { return value.z; }
+    if (lane == 3) { return value.w; }
+    return 0.0;
+}
+float ast_key_state(int scancode) {
+    if (scancode < 0 || scancode >= 512) { return 0.0; }
+    int bucket = scancode / 4;
+    int lane = scancode - bucket * 4;
+    return ast_packed_vec4_read(ast_keys[bucket], lane);
+}
+float ast_mouse_button_state(int button) {
+    if (button < 0 || button >= 8) { return 0.0; }
+    int bucket = button / 4;
+    int lane = button - bucket * 4;
+    return ast_packed_vec4_read(ast_mouse_buttons[bucket], lane);
+}
+float ast_gamepad_button_state(int button) {
+    if (button < 0 || button >= 32) { return 0.0; }
+    int bucket = button / 4;
+    int lane = button - bucket * 4;
+    return ast_packed_vec4_read(ast_gamepad_buttons[bucket], lane);
+}
+float ast_gamepad_axis_state(int axis) {
+    if (axis < 0 || axis >= 16) { return 0.0; }
+    int bucket = axis / 4;
+    int lane = axis - bucket * 4;
+    return ast_packed_vec4_read(ast_gamepad_axes[bucket], lane);
+}
+
+void main() {
+    float r[64];
+    int px = int(floor(gl_FragCoord.x));
+    int py = int(ast_height - 1.0 - floor(gl_FragCoord.y));
+    r[0] = float(px); r[1] = float(py); r[2] = ast_time; r[3] = ast_width;
+    r[4] = ast_height; r[5] = ast_mouse_x; r[6] = ast_mouse_y;
+    r[7] = ast_mouse_down; r[8] = ast_mouse_click_x; r[9] = ast_mouse_click_y;
+    r[10] = ast_frame; r[11] = ast_time_delta; r[12] = ast_wall_clock_seconds;
+    r[13] = ast_year; r[14] = ast_month; r[15] = ast_day;
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+    int pc = 0;
+    int steps = 0;
+    int call_stack[32];
+    int call_depth = 0;
+    while (pc >= 0 && steps < ${maxSteps}) {
+        steps = steps + 1;
+        switch (pc) {
+`;
+}
+
+function emitGlslInstruction(instruction: Instruction, pc: number, programSize: number): string {
+  const o = instruction.operands;
+  const next = pc + 1;
+  const line = `            // ${instruction.file}:${instruction.line}\n`;
+  switch (instruction.op) {
+    case "mov":
+      return `${line}            ${writeGlslRegister(o[0], readGlslOperand(o[1]))}\n            pc = ${next};\n`;
+    case "add":
+      return `${line}            ${writeGlslRegister(o[0], `${readGlslOperand(o[1])} + ${readGlslOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "sub":
+      return `${line}            ${writeGlslRegister(o[0], `${readGlslOperand(o[1])} - ${readGlslOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "mul":
+      return `${line}            ${writeGlslRegister(o[0], `${readGlslOperand(o[1])} * ${readGlslOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "div":
+    case "norm":
+      return `${line}            ${writeGlslRegister(o[0], `ast_safe_div(${readGlslOperand(o[1])}, ${readGlslOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "sin":
+    case "cos":
+    case "abs":
+    case "floor":
+      return `${line}            ${writeGlslRegister(o[0], `${instruction.op}(${readGlslOperand(o[1])})`)}\n            pc = ${next};\n`;
+    case "sqrt":
+      return `${line}            ${writeGlslRegister(o[0], `sqrt(max(0.0, ${readGlslOperand(o[1])}))`)}\n            pc = ${next};\n`;
+    case "fract":
+      return `${line}            ${writeGlslRegister(o[0], `${readGlslOperand(o[1])} - floor(${readGlslOperand(o[1])})`)}\n            pc = ${next};\n`;
+    case "min":
+    case "max":
+      return `${line}            ${writeGlslRegister(o[0], `${instruction.op}(${readGlslOperand(o[1])}, ${readGlslOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "mod":
+      return `${line}            ${writeGlslRegister(o[0], `ast_mod(${readGlslOperand(o[1])}, ${readGlslOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "lt":
+      return `${line}            ${writeGlslRegister(o[0], `(${readGlslOperand(o[1])} < ${readGlslOperand(o[2])} ? 1.0 : 0.0)`)}\n            pc = ${next};\n`;
+    case "gt":
+      return `${line}            ${writeGlslRegister(o[0], `(${readGlslOperand(o[1])} > ${readGlslOperand(o[2])} ? 1.0 : 0.0)`)}\n            pc = ${next};\n`;
+    case "eq":
+      return `${line}            ${writeGlslRegister(o[0], `(ast_eq(${readGlslOperand(o[1])}, ${readGlslOperand(o[2])}) ? 1.0 : 0.0)`)}\n            pc = ${next};\n`;
+    case "jmp":
+      return `${line}            pc = ${target(o[0])};\n`;
+    case "jnz":
+      return `${line}            if (${readGlslOperand(o[0])} != 0.0) { pc = ${target(o[1])}; } else { pc = ${next}; }\n`;
+    case "jz":
+      return `${line}            if (${readGlslOperand(o[0])} == 0.0) { pc = ${target(o[1])}; } else { pc = ${next}; }\n`;
+    case "jlt":
+    case "jle":
+    case "jgt":
+    case "jge":
+    case "jeq":
+    case "jne": {
+      const op = new Map([
+        ["jlt", "<"],
+        ["jle", "<="],
+        ["jgt", ">"],
+        ["jge", ">="]
+      ]).get(instruction.op);
+      const condition =
+        instruction.op === "jeq"
+          ? `ast_eq(${readGlslOperand(o[0])}, ${readGlslOperand(o[1])})`
+          : instruction.op === "jne"
+            ? `!ast_eq(${readGlslOperand(o[0])}, ${readGlslOperand(o[1])})`
+            : `${readGlslOperand(o[0])} ${op} ${readGlslOperand(o[1])}`;
+      return `${line}            if (${condition}) { pc = ${target(o[2])}; } else { pc = ${next}; }\n`;
+    }
+    case "call":
+      return `${line}            if (call_depth >= 32) { pc = -1; } else { call_stack[call_depth] = ${next}; call_depth = call_depth + 1; pc = ${target(o[0])}; }\n`;
+    case "ret":
+      return `${line}            if (call_depth > 0) { call_depth = call_depth - 1; pc = call_stack[call_depth]; } else { pc = ${programSize}; }\n`;
+    case "tex":
+      return `${line}            int tex_channel_${pc} = ${readGlslIntOperand(o[4])};
+            vec4 tex_meta_${pc} = ast_channel_meta(tex_channel_${pc});
+            if (tex_meta_${pc}.x <= 0.0 || tex_meta_${pc}.y <= 0.0) {
+                ${writeGlslRegister(o[0], "0.0")} ${writeGlslRegister(o[1], "0.0")} ${writeGlslRegister(o[2], "0.0")} ${writeGlslRegister(o[3], "0.0")}
+            } else {
+                int tex_w_${pc} = int(tex_meta_${pc}.x);
+                int tex_h_${pc} = int(tex_meta_${pc}.y);
+                int tex_x_${pc} = clamp(int(floor(clamp(${readGlslOperand(o[5])}, 0.0, 1.0) * tex_meta_${pc}.x)), 0, tex_w_${pc} - 1);
+                int tex_y_${pc} = clamp(int(floor(clamp(${readGlslOperand(o[6])}, 0.0, 1.0) * tex_meta_${pc}.y)), 0, tex_h_${pc} - 1);
+                vec4 tex_sample_${pc} = ast_channel_load(tex_channel_${pc}, ivec2(tex_x_${pc}, tex_y_${pc}));
+                ${writeGlslRegister(o[0], `tex_sample_${pc}.r`)} ${writeGlslRegister(o[1], `tex_sample_${pc}.g`)} ${writeGlslRegister(o[2], `tex_sample_${pc}.b`)} ${writeGlslRegister(o[3], `tex_sample_${pc}.a`)}
+            }
+            pc = ${next};\n`;
+    case "texel":
+      return `${line}            int texel_channel_${pc} = ${readGlslIntOperand(o[4])};
+            vec4 texel_meta_${pc} = ast_channel_meta(texel_channel_${pc});
+            int texel_x_${pc} = int(round(${readGlslOperand(o[5])}));
+            int texel_y_${pc} = int(round(${readGlslOperand(o[6])}));
+            if (texel_meta_${pc}.x <= 0.0 || texel_meta_${pc}.y <= 0.0 || texel_x_${pc} < 0 || texel_y_${pc} < 0 || texel_x_${pc} >= int(texel_meta_${pc}.x) || texel_y_${pc} >= int(texel_meta_${pc}.y)) {
+                ${writeGlslRegister(o[0], "0.0")} ${writeGlslRegister(o[1], "0.0")} ${writeGlslRegister(o[2], "0.0")} ${writeGlslRegister(o[3], "0.0")}
+            } else {
+                vec4 texel_sample_${pc} = ast_channel_load(texel_channel_${pc}, ivec2(texel_x_${pc}, texel_y_${pc}));
+                ${writeGlslRegister(o[0], `texel_sample_${pc}.r`)} ${writeGlslRegister(o[1], `texel_sample_${pc}.g`)} ${writeGlslRegister(o[2], `texel_sample_${pc}.b`)} ${writeGlslRegister(o[3], `texel_sample_${pc}.a`)}
+            }
+            pc = ${next};\n`;
+    case "chdim":
+      return `${line}            vec4 chdim_meta_${pc} = ast_channel_meta(${readGlslIntOperand(o[2])});
+            ${writeGlslRegister(o[0], `chdim_meta_${pc}.x`)}
+            ${writeGlslRegister(o[1], `chdim_meta_${pc}.y`)}
+            pc = ${next};\n`;
+    case "chtime":
+      return `${line}            vec4 chtime_meta_${pc} = ast_channel_meta(${readGlslIntOperand(o[1])});
+            ${writeGlslRegister(o[0], `chtime_meta_${pc}.z`)}
+            pc = ${next};\n`;
+    case "chsrate":
+      return `${line}            vec4 chsrate_meta_${pc} = ast_channel_meta(${readGlslIntOperand(o[1])});
+            ${writeGlslRegister(o[0], `chsrate_meta_${pc}.w`)}
+            pc = ${next};\n`;
+    case "key":
+      return `${line}            ${writeGlslRegister(o[0], `ast_key_state(int(${readGlslOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "mbtn":
+      return `${line}            ${writeGlslRegister(o[0], `ast_mouse_button_state(int(${readGlslOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "mwheel":
+      return `${line}            ${writeGlslRegister(o[0], "ast_mouse_wheel.x")}
+            ${writeGlslRegister(o[1], "ast_mouse_wheel.y")}
+            pc = ${next};\n`;
+    case "gbtn":
+      return `${line}            ${writeGlslRegister(o[0], `ast_gamepad_button_state(int(${readGlslOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "gaxis":
+      return `${line}            ${writeGlslRegister(o[0], `ast_gamepad_axis_state(int(${readGlslOperand(o[1])}))`)}
+            pc = ${next};\n`;
+    case "out":
+      return `${line}            color = vec4(ast_unorm(${readGlslOperand(o[0])}), ast_unorm(${readGlslOperand(o[1])}), ast_unorm(${readGlslOperand(o[2])}), ast_unorm(${readGlslOperand(o[3])}));\n            pc = ${next};\n`;
+    case "out8":
+      return `${line}            color = vec4(ast_byte(${readGlslOperand(o[0])}), ast_byte(${readGlslOperand(o[1])}), ast_byte(${readGlslOperand(o[2])}), ast_byte(${readGlslOperand(o[3])}));\n            pc = ${next};\n`;
+    case "halt":
+      return `${line}            pc = ${programSize};\n`;
+    default:
+      return `${line}            pc = -1;\n`;
+  }
+}
+
+export function compileAsmToGlsl(files: ProjectSource[], main: string, maxSteps = 4096): GlslCompileResult {
+  const assembled = assemble(files, main);
+  const diagnostics = assembled.diagnostics;
+  const instructions = pruneUnreachable(assembled.instructions);
+  for (const instruction of instructions) {
+    if (!emittedOps.has(instruction.op)) {
+      addDiagnostic(diagnostics, instruction.file, instruction.line, `opcode '${instruction.op}' is not supported by the browser compiler yet`);
+    }
+  }
+  if (diagnostics.length > 0) {
+    return { glsl: "", diagnostics };
+  }
+  let glsl = glslHeader(maxSteps);
+  const starts = blockStarts(instructions);
+  starts.forEach((start, index) => {
+    const end = starts[index + 1] ?? instructions.length;
+    glsl += `        case ${start}: {\n`;
+    for (let pc = start; pc < end; ++pc) {
+      glsl += emitGlslInstruction(instructions[pc], pc, instructions.length);
+      if (isControlFlow(instructions[pc].op)) {
+        break;
+      }
+    }
+    glsl += "        }\n";
+  });
+  glsl += `        default: { pc = -1; }
+        }
+    }
+    fragColor = color;
+}
+`;
+  return { glsl, diagnostics: [] };
 }

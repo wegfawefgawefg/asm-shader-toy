@@ -1,6 +1,6 @@
 import "./styles.css";
 import { createAsmEditor, createWgslEditor, setEditorText } from "./asmEditor";
-import { compileAsmToWgsl } from "./compiler";
+import { compileAsmToGlsl, compileAsmToWgsl } from "./compiler";
 import {
   decodeProject,
   encodeProject,
@@ -23,6 +23,15 @@ import {
   type GpuContext,
   type ProgramState
 } from "./webgpu";
+import {
+  configureGlCanvas,
+  createGlProgram,
+  destroyGlProgram,
+  initWebGl,
+  renderGlFrame,
+  type GlContext,
+  type GlProgramState
+} from "./webgl";
 
 type AppState = {
   project: ProjectBundle;
@@ -248,6 +257,9 @@ function syncCanvasSize(): void {
   if (gpuContext) {
     configureCanvas(gpuContext);
   }
+  if (glContext) {
+    configureGlCanvas(glContext);
+  }
 }
 
 function shaderMousePosition(event: PointerEvent | MouseEvent): { x: number; y: number } {
@@ -456,6 +468,8 @@ function saveCurrentFile(): void {
 
 let gpuContext: GpuContext | null = null;
 let program: ProgramState | null = null;
+let glContext: GlContext | null = null;
+let glProgram: GlProgramState | null = null;
 let rendererError = "";
 let programBuildVersion = 0;
 await restoreProjectRuntimeSources();
@@ -467,10 +481,21 @@ try {
   statusText.textContent = `WebGPU ready (${gpuContext.adapterLabel})`;
 } catch (error) {
   rendererError = error instanceof Error ? error.message : String(error);
-  setError(`${rendererError}
+  try {
+    glContext = initWebGl(canvas);
+    glProgram = await createGlProgram(glContext, state.project.settings.glsl ?? "", state.project.settings, channelSources);
+    setDiagnostics();
+    statusText.textContent = "WebGL2 ready (fallback)";
+  } catch (fallbackError) {
+    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    setError(`${rendererError}
 
-The editor and ASM compiler are still usable, but this browser could not start the WebGPU renderer.`);
-  statusText.textContent = "WebGPU unavailable";
+WebGL2 fallback also failed:
+${fallbackMessage}
+
+The editor and ASM compiler are still usable, but this browser could not start a GPU renderer.`);
+    statusText.textContent = "GPU renderer unavailable";
+  }
 }
 let compileTimer: number | undefined;
 
@@ -493,51 +518,68 @@ async function waitForSubmittedWork(context: GpuContext): Promise<void> {
 }
 
 async function replaceProgram(status: string): Promise<void> {
-  if (!gpuContext) {
-    setError(rendererError || "WebGPU is not available.");
-    statusText.textContent = "WebGPU unavailable";
+  if (!gpuContext && !glContext) {
+    setError(rendererError || "No GPU renderer is available.");
+    statusText.textContent = "GPU renderer unavailable";
     return;
   }
-  const context = gpuContext;
-  const oldProgram = program;
   const version = ++programBuildVersion;
-  statusText.textContent = "Building WGSL...";
-  const nextProgram = await createProgram(context, state.project.settings.wgsl, state.project.settings, channelSources);
-  if (version === programBuildVersion) {
-    program = nextProgram;
+  if (gpuContext) {
+    const context = gpuContext;
+    const oldProgram = program;
+    statusText.textContent = "Building WGSL...";
+    const nextProgram = await createProgram(context, state.project.settings.wgsl, state.project.settings, channelSources);
+    if (version === programBuildVersion) {
+      program = nextProgram;
+      await waitForSubmittedWork(context);
+      destroyProgram(oldProgram);
+      if (version === programBuildVersion) {
+        setDiagnostics();
+        statusText.textContent = status;
+      }
+      return;
+    }
     await waitForSubmittedWork(context);
-    destroyProgram(oldProgram);
+    destroyProgram(nextProgram);
+    return;
+  }
+  const context = glContext!;
+  const oldProgram = glProgram;
+  statusText.textContent = "Building GLSL...";
+  const nextProgram = await createGlProgram(context, state.project.settings.glsl ?? "", state.project.settings, channelSources);
+  if (version === programBuildVersion) {
+    glProgram = nextProgram;
+    destroyGlProgram(context, oldProgram);
     if (version === programBuildVersion) {
       setDiagnostics();
       statusText.textContent = status;
     }
     return;
   }
-  await waitForSubmittedWork(context);
-  destroyProgram(nextProgram);
+  destroyGlProgram(context, nextProgram);
 }
 
 async function compileWgsl(): Promise<boolean> {
   saveCurrentFile();
-  if (!gpuContext) {
-    setError(rendererError || "WebGPU is not available.");
-    statusText.textContent = "WebGPU unavailable";
+  if (!gpuContext && !glContext) {
+    setError(rendererError || "No GPU renderer is available.");
+    statusText.textContent = "GPU renderer unavailable";
     return false;
   }
   try {
-    await replaceProgram("Compiled WGSL");
+    await replaceProgram(gpuContext ? "Compiled WGSL" : "Compiled GLSL");
     return true;
   } catch (error) {
     setError(error instanceof Error ? error.message : String(error));
-    statusText.textContent = "WGSL compile failed";
+    statusText.textContent = gpuContext ? "WGSL compile failed" : "GLSL compile failed";
     return false;
   }
 }
 
 async function resetProgram(): Promise<void> {
-  if (!gpuContext) {
-    setError(rendererError || "WebGPU is not available.");
-    statusText.textContent = "WebGPU unavailable";
+  if (!gpuContext && !glContext) {
+    setError(rendererError || "No GPU renderer is available.");
+    statusText.textContent = "GPU renderer unavailable";
     return;
   }
   state.frame = 0;
@@ -890,17 +932,22 @@ async function compileAsm(): Promise<boolean> {
   const diagnosticsList: string[] = [];
   const maxSteps = state.project.settings.maxSteps ?? 4096;
   const imageResult = compileAsmToWgsl(state.project.files, state.project.settings.main, maxSteps);
+  const imageGlslResult = compileAsmToGlsl(state.project.files, state.project.settings.main, maxSteps);
   diagnosticsList.push(
-    ...imageResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
+    ...imageResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`),
+    ...imageGlslResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
   );
   for (const buffer of bufferSettings()) {
     if (!buffer) {
       continue;
     }
     const result = compileAsmToWgsl(state.project.files, buffer.file, maxSteps);
+    const glslResult = compileAsmToGlsl(state.project.files, buffer.file, maxSteps);
     buffer.wgsl = result.wgsl;
+    buffer.glsl = glslResult.glsl;
     diagnosticsList.push(
-      ...result.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
+      ...result.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`),
+      ...glslResult.diagnostics.map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
     );
   }
   if (diagnosticsList.length > 0) {
@@ -909,6 +956,7 @@ async function compileAsm(): Promise<boolean> {
     return false;
   }
   state.project.settings.wgsl = imageResult.wgsl;
+  state.project.settings.glsl = imageGlslResult.glsl;
   suppressWgslChange = true;
   setEditorText(wgslEditor, imageResult.wgsl);
   suppressWgslChange = false;
@@ -929,6 +977,25 @@ function tick(): void {
       setError(gpuContext.errors.join("\n"));
       statusText.textContent = "WebGPU error";
       gpuContext.errors.length = 0;
+    }
+    state.frame += 1;
+    state.fpsFrames += 1;
+    const now = performance.now() / 1000;
+    const elapsed = now - state.fpsStart;
+    if (elapsed >= 0.5) {
+      state.fps = state.fpsFrames / elapsed;
+      state.fpsFrames = 0;
+      state.fpsStart = now;
+      fpsText.textContent = `${state.fps.toFixed(1)} fps`;
+    }
+  } else if (state.running && glContext && glProgram && glProgram.sizeKey === currentSizeKey()) {
+    renderGlFrame(glContext, glProgram, state.project.settings, state.frame, state.startSeconds, channelSources, inputState);
+    inputState.mouseWheelX = 0;
+    inputState.mouseWheelY = 0;
+    if (glContext.errors.length > 0) {
+      setError(glContext.errors.join("\n"));
+      statusText.textContent = "WebGL2 error";
+      glContext.errors.length = 0;
     }
     state.frame += 1;
     state.fpsFrames += 1;

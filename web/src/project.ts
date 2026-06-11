@@ -1,4 +1,4 @@
-import { compileAsmToWgsl } from "./compiler";
+import { compileAsmToGlsl, compileAsmToWgsl } from "./compiler";
 
 export type ProjectFile = {
   path: string;
@@ -10,6 +10,7 @@ export type SizePreset = "gb" | "gba" | "nes" | "snes" | "n64" | "ps1" | "psp";
 export type ProjectSettings = {
   main: string;
   wgsl: string;
+  glsl?: string;
   size: SizePreset | `${number}x${number}`;
   scale: number;
   maxSteps?: number;
@@ -36,6 +37,7 @@ export type ChannelSetting = {
 export type BufferSetting = {
   file: string;
   wgsl: string;
+  glsl?: string;
 };
 
 export const sizePresets: Record<SizePreset, { width: number; height: number }> = {
@@ -74,6 +76,7 @@ export function makeDefaultProject(): ProjectBundle {
     settings: {
       main: "main.asm",
       wgsl: compiled.wgsl,
+      glsl: compileAsmToGlsl(files, "main.asm").glsl,
       size: "gb",
       scale: 4,
       maxSteps: 4096,
@@ -118,7 +121,9 @@ export function normalizeProject(bundle: ProjectBundle): ProjectBundle {
       ...bundle.settings,
       maxSteps: Math.max(1, Math.floor(bundle.settings.maxSteps ?? 4096)),
       channels: channels.slice(0, 4).map((channel, index) => normalizeChannel(channel, index)),
-      buffers: buffers.slice(0, 4).map((buffer) => (buffer?.file ? { file: buffer.file, wgsl: buffer.wgsl ?? "" } : null))
+      buffers: buffers
+        .slice(0, 4)
+        .map((buffer) => (buffer?.file ? { file: buffer.file, wgsl: buffer.wgsl ?? "", ...(buffer.glsl ? { glsl: buffer.glsl } : {}) } : null))
     }
   };
 }

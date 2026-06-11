@@ -33,9 +33,11 @@ describe("template projects", () => {
     const multifile = makeTemplateProject(templateProjects.find((template) => template.id === "examples/multifile/main.asm")!);
     expect(multifile.files.map((file) => file.path)).toContain("examples/multifile/palette.inc");
     expect(multifile.settings.wgsl).toContain("textureStore");
+    expect(multifile.settings.glsl).toContain("fragColor");
 
     const life = makeTemplateProject(templateProjects.find((template) => template.id === "examples/buffers/life_display.asm")!);
     expect(life.settings.buffers?.[0]?.file).toBe("examples/buffers/life_buffer.asm");
+    expect(life.settings.buffers?.[0]?.glsl).toContain("fragColor");
   });
 
   test("lets pixelated planet use default render settings", () => {

@@ -1,4 +1,4 @@
-import { compileAsmToWgsl } from "./compiler";
+import { compileAsmToGlsl, compileAsmToWgsl } from "./compiler";
 import { normalizeProject, type ProjectBundle, type ProjectFile } from "./project";
 
 import commonMath from "../../examples/common/math.inc?raw";
@@ -178,16 +178,30 @@ export const templateProjects: TemplateProject[] = [
 export function makeTemplateProject(template: TemplateProject): ProjectBundle {
   const files = template.files.map((file) => ({ ...file }));
   const compiled = compileAsmToWgsl(files, template.main, template.maxSteps ?? 4096);
+  const glslCompiled = compileAsmToGlsl(files, template.main, template.maxSteps ?? 4096);
+  const buffers = template.buffers
+    ? template.buffers.map((buffer) => {
+        if (!buffer) {
+          return null;
+        }
+        return {
+          file: buffer.file,
+          wgsl: compileAsmToWgsl(files, buffer.file, template.maxSteps ?? 4096).wgsl,
+          glsl: compileAsmToGlsl(files, buffer.file, template.maxSteps ?? 4096).glsl
+        };
+      })
+    : [null, null, null, null];
   return normalizeProject({
     files,
     settings: {
       main: template.main,
       wgsl: compiled.wgsl,
+      glsl: glslCompiled.glsl,
       size: template.size ?? "gba",
       scale: template.scale ?? 4,
       maxSteps: template.maxSteps ?? 4096,
       channels: template.channels ?? fallbackChannels.map((channel) => ({ ...channel })),
-      buffers: template.buffers ?? [null, null, null, null]
+      buffers
     }
   });
 }

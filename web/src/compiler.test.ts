@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compileAsmToWgsl } from "./compiler";
+import { compileAsmToGlsl, compileAsmToWgsl } from "./compiler";
 
 describe("browser asm compiler", () => {
   test("compiles std screen aliases and output", () => {
@@ -93,6 +93,26 @@ out r16, r21, r26, r19
     expect(result.wgsl).toContain("chdim_meta");
     expect(result.wgsl).toContain("let tex_channel_0 = 0;");
     expect(result.wgsl).toContain("ast_channel_meta(0);");
+  });
+
+  test("compiles GLSL fallback shader", () => {
+    const result = compileAsmToGlsl(
+      [
+        {
+          path: "main.asm",
+          content: `.include <std/screen.inc>
+tex r20, r21, r22, r23, 0, uv_x, uv_y
+out r20, uv_y, time, 1.0
+`
+        }
+      ],
+      "main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.glsl).toContain("#version 300 es");
+    expect(result.glsl).toContain("texelFetch(channel0_texture");
+    expect(result.glsl).toContain("fragColor = color");
   });
 
   test("compiles live input query ops", () => {
