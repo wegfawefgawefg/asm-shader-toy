@@ -131,6 +131,8 @@ appRoot.innerHTML = `
         <button class="button" data-action="pause">Pause</button>
         <button class="button" data-action="reset">Reset</button>
         <button class="button" data-action="save-frame">Save Frame</button>
+        <button class="button" data-action="copy-frame">Copy PNG</button>
+        <button class="button" data-action="record-video">Record</button>
         <button class="button" data-action="toggle-wgsl">WGSL</button>
         <output data-fps>0 fps</output>
       </div>
@@ -556,6 +558,67 @@ function saveFrame(): void {
     URL.revokeObjectURL(link.href);
     statusText.textContent = "Saved frame";
   }, "image/png");
+}
+
+function canvasBlob(type: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error(`could not encode ${type}`));
+      }
+    }, type);
+  });
+}
+
+async function copyFramePng(): Promise<void> {
+  if (!navigator.clipboard || !("ClipboardItem" in window)) {
+    throw new Error("PNG clipboard writes are not available in this browser.");
+  }
+  const blob = await canvasBlob("image/png");
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+  statusText.textContent = "Copied PNG";
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+async function recordVideo(seconds: number): Promise<void> {
+  if (!("MediaRecorder" in window) || !canvas.captureStream) {
+    throw new Error("Canvas video recording is not available in this browser.");
+  }
+  const duration = Math.max(0.1, Math.min(300, seconds));
+  const stream = canvas.captureStream(60);
+  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+    ? "video/webm;codecs=vp9"
+    : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+      ? "video/webm;codecs=vp8"
+      : "video/webm";
+  const recorder = new MediaRecorder(stream, { mimeType });
+  const chunks: Blob[] = [];
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      recorder.addEventListener("stop", () => resolve(), { once: true });
+      recorder.addEventListener("error", () => reject(new Error("video recording failed")), { once: true });
+      recorder.start();
+      window.setTimeout(() => recorder.stop(), Math.round(duration * 1000));
+    });
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+  downloadBlob(new Blob(chunks, { type: mimeType }), `asm-shader-toy-${duration.toFixed(1)}s.webm`);
+  statusText.textContent = `Saved ${duration.toFixed(1)}s video`;
 }
 
 async function dataUrlForFile(file: File): Promise<string> {
@@ -1005,6 +1068,22 @@ appRoot.addEventListener("click", (event) => {
   }
   if (action === "save-frame") {
     saveFrame();
+  }
+  if (action === "copy-frame") {
+    void copyFramePng().catch((error) => {
+      setError(error instanceof Error ? error.message : String(error));
+      statusText.textContent = "Copy PNG failed";
+    });
+  }
+  if (action === "record-video") {
+    const duration = Number(window.prompt("Record seconds", "5") ?? "");
+    if (Number.isFinite(duration) && duration > 0) {
+      statusText.textContent = "Recording video...";
+      void recordVideo(duration).catch((error) => {
+        setError(error instanceof Error ? error.message : String(error));
+        statusText.textContent = "Record failed";
+      });
+    }
   }
   if (action === "toggle-wgsl") {
     state.showWgsl = !state.showWgsl;
