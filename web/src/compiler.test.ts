@@ -187,6 +187,28 @@ mov shade, 0.5
     expect(result.wgsl).toContain("ast_unorm(r[48])");
   });
 
+  test("normalizes relative include paths", () => {
+    const result = compileAsmToWgsl(
+      [
+        {
+          path: "examples/basics/main.asm",
+          content: `.include "../common/math.inc"
+out tau, 0.0, 0.0, 1.0
+`
+        },
+        {
+          path: "examples/common/math.inc",
+          content: `.const tau 6.2831853
+`
+        }
+      ],
+      "examples/basics/main.asm"
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.wgsl).toContain("ast_unorm(6.2831853)");
+  });
+
   test("compiles a feedback buffer project pair", () => {
     const files = [
       {

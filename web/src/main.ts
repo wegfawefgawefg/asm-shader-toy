@@ -10,6 +10,7 @@ import {
   type ChannelSetting,
   type ProjectBundle
 } from "./project";
+import { makeTemplateProject, templateProjects } from "./templates";
 import { createProgram, destroyProgram, initWebGpu, renderFrame, type ChannelRuntimeSource } from "./webgpu";
 
 type AppState = {
@@ -69,6 +70,12 @@ appRoot.innerHTML = `
         <input class="hidden-input" type="file" accept="application/json" data-import />
       </label>
       <button class="button" data-action="share">Copy Share URL</button>
+      <label class="template-picker">
+        <span class="section-title">Templates</span>
+        <select data-template>
+          <option value="">Choose template...</option>
+        </select>
+      </label>
       <div class="buffer-list" data-buffers></div>
       <div class="channel-list" data-channels></div>
     </aside>
@@ -115,12 +122,20 @@ const fpsText = appRoot.querySelector<HTMLOutputElement>("[data-fps]")!;
 const canvas = appRoot.querySelector<HTMLCanvasElement>("[data-canvas]")!;
 const bufferList = appRoot.querySelector<HTMLDivElement>("[data-buffers]")!;
 const channelList = appRoot.querySelector<HTMLDivElement>("[data-channels]")!;
+const templateSelect = appRoot.querySelector<HTMLSelectElement>("[data-template]")!;
 
 for (const name of Object.keys(sizePresets)) {
   const option = document.createElement("option");
   option.value = name;
   option.textContent = name;
   sizeSelect.append(option);
+}
+
+for (const template of templateProjects) {
+  const option = document.createElement("option");
+  option.value = template.id;
+  option.textContent = template.name;
+  templateSelect.append(option);
 }
 
 function currentFile() {
@@ -615,6 +630,25 @@ function tick(): void {
   requestAnimationFrame(tick);
 }
 
+async function loadTemplate(templateId: string): Promise<void> {
+  const template = templateProjects.find((candidate) => candidate.id === templateId);
+  if (!template) {
+    return;
+  }
+  saveCurrentFile();
+  for (const index of Array.from(channelSources.keys())) {
+    stopChannelSource(index);
+  }
+  state.project = makeTemplateProject(template);
+  state.selectedFile = state.project.settings.main;
+  state.frame = 0;
+  state.startSeconds = performance.now() / 1000;
+  renderProjectUi();
+  await compileAsm();
+  templateSelect.value = "";
+  statusText.textContent = `Loaded ${template.name}`;
+}
+
 appRoot.addEventListener("input", (event) => {
   const target = event.target;
   if (target instanceof HTMLInputElement && target.dataset.channel !== undefined && target.files?.[0]) {
@@ -645,6 +679,12 @@ appRoot.addEventListener("input", (event) => {
   if (target === mainSelect) {
     state.project.settings.main = mainSelect.value;
     scheduleCompile(compileAsm);
+  }
+  if (target === templateSelect) {
+    void loadTemplate(templateSelect.value).catch((error) => {
+      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      statusText.textContent = "Template failed";
+    });
   }
   if (target instanceof HTMLSelectElement && target.dataset.buffer !== undefined) {
     const index = Number(target.dataset.buffer);

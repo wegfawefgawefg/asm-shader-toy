@@ -276,15 +276,30 @@ function splitArgs(text: string): string[] {
 }
 
 function normalizePath(base: string, includePath: string): string {
+  const normalizeSegments = (path: string): string => {
+    const out: string[] = [];
+    for (const part of path.split("/")) {
+      if (!part || part === ".") {
+        continue;
+      }
+      if (part === "..") {
+        out.pop();
+        continue;
+      }
+      out.push(part);
+    }
+    return out.join("/");
+  };
+
   if (includePath.startsWith("<") && includePath.endsWith(">")) {
     return includePath.slice(1, -1);
   }
   if (includePath.startsWith('"') && includePath.endsWith('"')) {
     const raw = includePath.slice(1, -1);
     const slash = base.lastIndexOf("/");
-    return slash >= 0 ? `${base.slice(0, slash + 1)}${raw}` : raw;
+    return normalizeSegments(slash >= 0 ? `${base.slice(0, slash + 1)}${raw}` : raw);
   }
-  return includePath;
+  return normalizeSegments(includePath);
 }
 
 function safeDiv(a: number, b: number): number {

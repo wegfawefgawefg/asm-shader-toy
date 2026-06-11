@@ -70,6 +70,21 @@ textarea {
   text-transform: uppercase;
 }
 
+.template-picker {
+  display: grid;
+  gap: 5px;
+}
+
+.template-picker select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #3a434d;
+  border-radius: 6px;
+  background: #20262d;
+  color: #e6e8ea;
+  font-size: 12px;
+}
+
 .buffer {
   display: grid;
   gap: 4px;
