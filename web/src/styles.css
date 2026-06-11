@@ -158,11 +158,6 @@ textarea {
   font-weight: 700;
 }
 
-.channel-input {
-  width: 100%;
-  font-size: 11px;
-}
-
 .channel-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -182,10 +177,18 @@ textarea {
 }
 
 .channel-button {
+  display: grid;
+  place-items: center;
   min-height: 28px;
   min-width: 0;
   padding: 0 4px;
   font-size: 11px;
+  line-height: 1;
+  text-align: center;
+}
+
+.channel-file-button {
+  user-select: none;
 }
 
 .channel-meta {

@@ -344,13 +344,17 @@ function renderChannelControls(): void {
     const label = document.createElement("label");
     label.className = "channel-label";
     label.textContent = `channel${index}`;
+    const controls = document.createElement("div");
+    controls.className = "channel-controls";
+    const imageLabel = document.createElement("label");
+    imageLabel.className = "button channel-button channel-file-button";
+    imageLabel.textContent = "Image";
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/png,image/jpeg,image/webp,image/gif";
     input.dataset.channel = String(index);
-    input.className = "channel-input";
-    const controls = document.createElement("div");
-    controls.className = "channel-controls";
+    input.className = "hidden-input";
+    imageLabel.append(input);
     const seedInput = document.createElement("input");
     seedInput.type = "text";
     seedInput.value = channel.seed ?? `seed${index}`;
@@ -375,7 +379,7 @@ function renderChannelControls(): void {
     micButton.dataset.channel = String(index);
     micButton.textContent = "Mic";
     const audioLabel = document.createElement("label");
-    audioLabel.className = "button channel-button";
+    audioLabel.className = "button channel-button channel-file-button";
     audioLabel.textContent = "Aud";
     const audioInput = document.createElement("input");
     audioInput.className = "hidden-input";
@@ -384,7 +388,7 @@ function renderChannelControls(): void {
     audioInput.dataset.audioChannel = String(index);
     audioLabel.append(audioInput);
     const videoLabel = document.createElement("label");
-    videoLabel.className = "button channel-button";
+    videoLabel.className = "button channel-button channel-file-button";
     videoLabel.textContent = "Vid";
     const videoInput = document.createElement("input");
     videoInput.className = "hidden-input";
@@ -399,6 +403,7 @@ function renderChannelControls(): void {
     videoUrlButton.dataset.channel = String(index);
     videoUrlButton.textContent = "URL";
     controls.append(
+      imageLabel,
       seedInput,
       noiseButton,
       webcamButton,
