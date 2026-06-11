@@ -42,9 +42,11 @@ is an accelerating backend for programs that fit the validated subset.
   compilation exists for a prototype subset covering includes, aliases,
   `.const`, `.consts`, labels, branches, calls, arithmetic, texture/channel
   metadata ops, live input query ops, and output. Browser channel controls can
-  bind static images or generated noise textures to `channel0..3` and preserve
-  them in project bundles. Webcam, microphone/audio, video, feedback buffers,
-  and native WebGPU execution are still unimplemented.
+  bind static images, generated noise textures, or mirrored webcam streams to
+  `channel0..3`. Image/noise channels are preserved in project bundles; webcam
+  channels preserve metadata and reconnect through browser permission.
+  Microphone/audio, video, feedback buffers, and native WebGPU execution are
+  still unimplemented.
 
 ## Why WGSL First
 
@@ -124,7 +126,7 @@ is an accelerating backend for programs that fit the validated subset.
 
    - generated noise. Done in the browser prototype.
    - image upload. Done in the browser prototype.
-   - webcam through `getUserMedia`
+   - webcam through `getUserMedia`. Done in the browser prototype.
    - microphone/audio analyser through Web Audio
    - video upload or URL-backed video where browser policy allows
 

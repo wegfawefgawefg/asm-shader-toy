@@ -10,7 +10,7 @@ import {
   type ChannelSetting,
   type ProjectBundle
 } from "./project";
-import { createProgram, destroyProgram, initWebGpu, renderFrame } from "./webgpu";
+import { createProgram, destroyProgram, initWebGpu, renderFrame, type ChannelRuntimeSource } from "./webgpu";
 
 type AppState = {
   project: ProjectBundle;
@@ -18,6 +18,10 @@ type AppState = {
   running: boolean;
   frame: number;
   startSeconds: number;
+};
+
+type LiveChannelSource = ChannelRuntimeSource & {
+  stream?: MediaStream;
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -36,6 +40,7 @@ async function main(): Promise<void> {
     frame: 0,
     startSeconds: performance.now() / 1000
   };
+  const channelSources = new Map<number, LiveChannelSource>();
 
   const loaded = await decodeProject(location.hash);
   if (loaded) {
@@ -168,11 +173,21 @@ function renderChannelControls(): void {
     noiseButton.dataset.action = "noise-channel";
     noiseButton.dataset.channel = String(index);
     noiseButton.textContent = "Noise";
-    controls.append(seedInput, noiseButton);
+    const webcamButton = document.createElement("button");
+    webcamButton.className = "button channel-button";
+    webcamButton.type = "button";
+    webcamButton.dataset.action = "webcam-channel";
+    webcamButton.dataset.channel = String(index);
+    webcamButton.textContent = "Cam";
+    controls.append(seedInput, noiseButton, webcamButton);
     const meta = document.createElement("div");
     meta.className = "channel-meta";
     if (channel.kind === "noise" || channel.seed) {
       meta.textContent = `${channel.width}x${channel.height} noise:${channel.seed ?? channel.name}`;
+    } else if (channel.kind === "webcam") {
+      meta.textContent = channelSources.has(index)
+        ? `${channel.width}x${channel.height} webcam mirrored`
+        : "webcam disconnected";
     } else if (channel.imageDataUrl) {
       meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
     } else {
@@ -191,14 +206,14 @@ function saveCurrentFile(): void {
 }
 
 let gpuContext = await initWebGpu(canvas);
-let program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings);
+let program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
 statusText.textContent = "WebGPU ready";
 
 async function compileWgsl(): Promise<void> {
   saveCurrentFile();
   try {
     destroyProgram(program);
-    program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings);
+    program = await createProgram(gpuContext, state.project.settings.wgsl, state.project.settings, channelSources);
     diagnostics.textContent = "";
     statusText.textContent = "Compiled WGSL";
   } catch (error) {
@@ -225,7 +240,18 @@ async function imageDimensions(dataUrl: string): Promise<{ width: number; height
   return dimensions;
 }
 
+function stopChannelSource(index: number): void {
+  const source = channelSources.get(index);
+  if (!source) {
+    return;
+  }
+  source.video?.pause();
+  source.stream?.getTracks().forEach((track) => track.stop());
+  channelSources.delete(index);
+}
+
 async function setChannelImage(index: number, file: File): Promise<void> {
+  stopChannelSource(index);
   const imageDataUrl = await dataUrlForFile(file);
   const dimensions = await imageDimensions(imageDataUrl);
   const channel: ChannelSetting = {
@@ -241,6 +267,7 @@ async function setChannelImage(index: number, file: File): Promise<void> {
 }
 
 async function setChannelNoise(index: number, seed: string): Promise<void> {
+  stopChannelSource(index);
   const normalizedSeed = seed.trim() || `seed${index}`;
   state.project.settings.channels[index] = {
     kind: "noise",
@@ -252,6 +279,33 @@ async function setChannelNoise(index: number, seed: string): Promise<void> {
   renderChannelControls();
   await compileWgsl();
 }
+
+async function setChannelWebcam(index: number): Promise<void> {
+  stopChannelSource(index);
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("getUserMedia is not available in this browser.");
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  await new Promise<void>((resolve, reject) => {
+    video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+    video.addEventListener("error", () => reject(video.error ?? new Error("webcam video failed")), { once: true });
+  });
+  await video.play();
+  channelSources.set(index, { video, stream, mirrored: true });
+  state.project.settings.channels[index] = {
+    kind: "webcam",
+    name: "webcam",
+    width: Math.max(1, video.videoWidth),
+    height: Math.max(1, video.videoHeight)
+  };
+  renderChannelControls();
+  await compileWgsl();
+}
+
 
 async function compileAsm(): Promise<void> {
   saveCurrentFile();
@@ -270,7 +324,7 @@ async function compileAsm(): Promise<void> {
 
 function tick(): void {
   if (state.running && program) {
-    renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds);
+    renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds, channelSources);
     state.frame += 1;
   }
   requestAnimationFrame(tick);
@@ -344,6 +398,13 @@ appRoot.addEventListener("click", (event) => {
     const seed = appRoot.querySelector<HTMLInputElement>(`[data-noise-seed="${index}"]`)?.value ?? `seed${index}`;
     void setChannelNoise(index, seed);
   }
+  if (action === "webcam-channel") {
+    const index = Number((event.target as HTMLElement).dataset.channel);
+    void setChannelWebcam(index).catch((error) => {
+      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      statusText.textContent = "Webcam failed";
+    });
+  }
 });
 
 appRoot.querySelector<HTMLInputElement>("[data-import]")!.addEventListener("change", async (event) => {
@@ -352,6 +413,9 @@ appRoot.querySelector<HTMLInputElement>("[data-import]")!.addEventListener("chan
     return;
   }
   state.project = normalizeProject(JSON.parse(await file.text()) as ProjectBundle);
+  for (const index of Array.from(channelSources.keys())) {
+    stopChannelSource(index);
+  }
   state.selectedFile = state.project.settings.main;
   renderProjectUi();
   await compileWgsl();
@@ -363,6 +427,9 @@ window.addEventListener("hashchange", async () => {
     return;
   }
   state.project = normalizeProject(decoded);
+  for (const index of Array.from(channelSources.keys())) {
+    stopChannelSource(index);
+  }
   state.selectedFile = decoded.settings.main;
   renderProjectUi();
   await compileWgsl();

@@ -81,10 +81,11 @@ npm run dev
 
 The browser compiler currently covers includes, aliases, `.const`, `.consts`,
 labels, branches, calls, arithmetic, texture/channel metadata ops, live input
-query ops, and color output. Image files and generated noise textures can be
-loaded into `channel0..3` from the sidebar and are preserved in exported/shared
-project bundles. Feedback buffers and media channels are still pending. For
-examples outside the browser
+query ops, and color output. Image files, generated noise textures, and live
+webcam streams can be loaded into `channel0..3` from the sidebar. Image/noise
+channels are preserved in exported/shared project bundles; webcam channels save
+their metadata but reconnect through local browser permission. Feedback buffers
+and other media channels are still pending. For examples outside the browser
 compiler subset, use the native CLI to emit WGSL, then paste it into the WGSL
 panel:
 

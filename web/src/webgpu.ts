@@ -21,6 +21,13 @@ type ProgramState = {
   channelMetadata: ChannelSetting[];
 };
 
+export type ChannelRuntimeSource = {
+  video?: HTMLVideoElement;
+  mirrorCanvas?: HTMLCanvasElement;
+  mirrorContext?: CanvasRenderingContext2D;
+  mirrored?: boolean;
+};
+
 const renderShader = `
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
@@ -158,7 +165,22 @@ async function makeChannelTexture(device: GPUDevice, channel: ChannelSetting): P
   return texture;
 }
 
-export async function createProgram(context: GpuContext, source: string, settings: ProjectSettings): Promise<ProgramState> {
+function makeVideoTexture(device: GPUDevice, video: HTMLVideoElement): GPUTexture {
+  const width = Math.max(1, video.videoWidth);
+  const height = Math.max(1, video.videoHeight);
+  return device.createTexture({
+    size: { width, height },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+  });
+}
+
+export async function createProgram(
+  context: GpuContext,
+  source: string,
+  settings: ProjectSettings,
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource> = new Map()
+): Promise<ProgramState> {
   const { device } = context;
   const size = parseSize(settings.size);
   const module = device.createShaderModule({ code: source });
@@ -184,7 +206,15 @@ export async function createProgram(context: GpuContext, source: string, setting
   while (normalizedChannels.length < 4) {
     normalizedChannels.push({ kind: "fallback", name: `channel${normalizedChannels.length}`, width: 1, height: 1 });
   }
-  const channelTextures = await Promise.all(normalizedChannels.slice(0, 4).map((channel) => makeChannelTexture(device, channel)));
+  const channelTextures = await Promise.all(
+    normalizedChannels.slice(0, 4).map((channel, index) => {
+      const video = channelSources.get(index)?.video;
+      if (video) {
+        return makeVideoTexture(device, video);
+      }
+      return makeChannelTexture(device, channel);
+    })
+  );
   const bindGroup = device.createBindGroup({
     layout: computePipeline.getBindGroupLayout(0),
     entries: [
@@ -217,9 +247,58 @@ export function destroyProgram(program: ProgramState | null): void {
   }
 }
 
-export function renderFrame(context: GpuContext, program: ProgramState, settings: ProjectSettings, frame: number, start: number): void {
+function updateLiveChannelTextures(
+  context: GpuContext,
+  program: ProgramState,
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource>
+): void {
+  for (let channel = 0; channel < program.channelTextures.length; ++channel) {
+    const source = channelSources.get(channel);
+    const video = source?.video;
+    if (!source || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      continue;
+    }
+    const width = Math.max(1, video.videoWidth);
+    const height = Math.max(1, video.videoHeight);
+    if (source.mirrored) {
+      if (!source.mirrorCanvas || !source.mirrorContext) {
+        source.mirrorCanvas = document.createElement("canvas");
+        source.mirrorContext = source.mirrorCanvas.getContext("2d") ?? undefined;
+      }
+      if (!source.mirrorContext) {
+        continue;
+      }
+      source.mirrorCanvas.width = width;
+      source.mirrorCanvas.height = height;
+      source.mirrorContext.setTransform(-1, 0, 0, 1, width, 0);
+      source.mirrorContext.drawImage(video, 0, 0, width, height);
+      source.mirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+      context.device.queue.copyExternalImageToTexture(
+        { source: source.mirrorCanvas },
+        { texture: program.channelTextures[channel] },
+        { width, height }
+      );
+      continue;
+    }
+    context.device.queue.copyExternalImageToTexture(
+      { source: video },
+      { texture: program.channelTextures[channel] },
+      { width, height }
+    );
+  }
+}
+
+export function renderFrame(
+  context: GpuContext,
+  program: ProgramState,
+  settings: ProjectSettings,
+  frame: number,
+  start: number,
+  channelSources: ReadonlyMap<number, ChannelRuntimeSource> = new Map()
+): void {
   const { device } = context;
   const size = parseSize(settings.size);
+  updateLiveChannelTextures(context, program, channelSources);
   writeUniforms(device, program.uniformBuffer, settings, frame, start);
 
   const renderBindGroup = device.createBindGroup({

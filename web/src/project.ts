@@ -21,7 +21,7 @@ export type ProjectBundle = {
 };
 
 export type ChannelSetting = {
-  kind?: "fallback" | "image" | "noise";
+  kind?: "fallback" | "image" | "noise" | "webcam";
   name: string;
   width: number;
   height: number;

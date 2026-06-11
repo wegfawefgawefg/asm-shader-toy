@@ -38,4 +38,24 @@ describe("project bundles", () => {
     });
     expect(project.settings.channels[0].imageDataUrl).toBeUndefined();
   });
+
+  test("preserves browser webcam channel metadata without serializing streams", () => {
+    const project = normalizeProject({
+      files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [{ kind: "webcam", name: "webcam", width: 640, height: 480 }]
+      }
+    });
+
+    expect(project.settings.channels[0]).toMatchObject({
+      kind: "webcam",
+      name: "webcam",
+      width: 640,
+      height: 480
+    });
+  });
 });
