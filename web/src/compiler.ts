@@ -1,0 +1,551 @@
+export type CompileDiagnostic = {
+  file: string;
+  line: number;
+  message: string;
+};
+
+export type CompileResult = {
+  wgsl: string;
+  diagnostics: CompileDiagnostic[];
+};
+
+type Operand = { kind: "register"; reg: number } | { kind: "immediate"; value: number };
+
+type Instruction = {
+  op: string;
+  operands: Operand[];
+  file: string;
+  line: number;
+};
+
+type RawInstruction = {
+  op: string;
+  args: string[];
+  file: string;
+  line: number;
+};
+
+type ProjectSource = {
+  path: string;
+  content: string;
+};
+
+const builtinAliases = new Map<string, number>([
+  ["px", 0],
+  ["py", 1],
+  ["time", 2],
+  ["width", 3],
+  ["height", 4],
+  ["mouse_x", 5],
+  ["mouse_y", 6],
+  ["mouse_down", 7],
+  ["mouse_click_x", 8],
+  ["mouse_click_y", 9],
+  ["frame", 10],
+  ["time_delta", 11],
+  ["wall_clock_seconds", 12],
+  ["year", 13],
+  ["month", 14],
+  ["day", 15]
+]);
+
+const stdAliases = new Map<string, number>([
+  ["uv_x", 16],
+  ["uv_y", 17],
+  ["pos_x", 18],
+  ["pos_y", 19],
+  ["color_r", 20],
+  ["color_g", 21],
+  ["color_b", 22],
+  ["color_a", 23],
+  ["tex0_r", 24],
+  ["tex0_g", 25],
+  ["tex0_b", 26],
+  ["tex0_a", 27],
+  ["tex1_r", 28],
+  ["tex1_g", 29],
+  ["tex1_b", 30],
+  ["tex1_a", 31],
+  ["tmp0", 32],
+  ["tmp1", 33],
+  ["tmp2", 34],
+  ["tmp3", 35],
+  ["tmp4", 36],
+  ["tmp5", 37],
+  ["tmp6", 38],
+  ["tmp7", 39],
+  ["tmp8", 40],
+  ["tmp9", 41],
+  ["tmp10", 42],
+  ["tmp11", 43],
+  ["tmp12", 44],
+  ["tmp13", 45],
+  ["tmp14", 46],
+  ["tmp15", 47]
+]);
+
+const screenInstructions: RawInstruction[] = [
+  { op: "norm", args: ["uv_x", "px", "width"], file: "<std/screen.inc>", line: 3 },
+  { op: "norm", args: ["uv_y", "py", "height"], file: "<std/screen.inc>", line: 4 },
+  { op: "mul", args: ["pos_x", "uv_x", "2.0"], file: "<std/screen.inc>", line: 5 },
+  { op: "sub", args: ["pos_x", "pos_x", "1.0"], file: "<std/screen.inc>", line: 6 },
+  { op: "mul", args: ["pos_y", "uv_y", "2.0"], file: "<std/screen.inc>", line: 7 },
+  { op: "sub", args: ["pos_y", "pos_y", "1.0"], file: "<std/screen.inc>", line: 8 }
+];
+
+const operandCounts = new Map<string, number>([
+  ["ret", 0],
+  ["halt", 0],
+  ["jmp", 1],
+  ["call", 1],
+  ["mov", 2],
+  ["sin", 2],
+  ["cos", 2],
+  ["sqrt", 2],
+  ["abs", 2],
+  ["floor", 2],
+  ["fract", 2],
+  ["jnz", 2],
+  ["jz", 2],
+  ["chtime", 2],
+  ["chsrate", 2],
+  ["key", 2],
+  ["mbtn", 2],
+  ["mwheel", 2],
+  ["gbtn", 2],
+  ["gaxis", 2],
+  ["add", 3],
+  ["sub", 3],
+  ["mul", 3],
+  ["div", 3],
+  ["min", 3],
+  ["max", 3],
+  ["mod", 3],
+  ["norm", 3],
+  ["lt", 3],
+  ["gt", 3],
+  ["eq", 3],
+  ["jeq", 3],
+  ["jne", 3],
+  ["jlt", 3],
+  ["jle", 3],
+  ["jgt", 3],
+  ["jge", 3],
+  ["chdim", 3],
+  ["out", 4],
+  ["out8", 4],
+  ["tex", 7],
+  ["texel", 7]
+]);
+
+const branchTargets = new Map<string, number[]>([
+  ["jmp", [0]],
+  ["call", [0]],
+  ["jnz", [1]],
+  ["jz", [1]],
+  ["jeq", [2]],
+  ["jne", [2]],
+  ["jlt", [2]],
+  ["jle", [2]],
+  ["jgt", [2]],
+  ["jge", [2]]
+]);
+
+const destinationOperands = new Map<string, number[]>([
+  ["mov", [0]],
+  ["add", [0]],
+  ["sub", [0]],
+  ["mul", [0]],
+  ["div", [0]],
+  ["sin", [0]],
+  ["cos", [0]],
+  ["sqrt", [0]],
+  ["abs", [0]],
+  ["floor", [0]],
+  ["fract", [0]],
+  ["min", [0]],
+  ["max", [0]],
+  ["mod", [0]],
+  ["norm", [0]],
+  ["lt", [0]],
+  ["gt", [0]],
+  ["eq", [0]],
+  ["tex", [0, 1, 2, 3]],
+  ["texel", [0, 1, 2, 3]],
+  ["chdim", [0, 1]],
+  ["chtime", [0]],
+  ["chsrate", [0]],
+  ["key", [0]],
+  ["mbtn", [0]],
+  ["mwheel", [0, 1]],
+  ["gbtn", [0]],
+  ["gaxis", [0]]
+]);
+
+const emittedOps = new Set([
+  "mov",
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "sin",
+  "cos",
+  "sqrt",
+  "abs",
+  "floor",
+  "fract",
+  "min",
+  "max",
+  "mod",
+  "norm",
+  "lt",
+  "gt",
+  "eq",
+  "jmp",
+  "jnz",
+  "jz",
+  "jeq",
+  "jne",
+  "jlt",
+  "jle",
+  "jgt",
+  "jge",
+  "call",
+  "ret",
+  "out",
+  "out8",
+  "halt"
+]);
+
+function addDiagnostic(diagnostics: CompileDiagnostic[], file: string, line: number, message: string): void {
+  diagnostics.push({ file, line, message });
+}
+
+function stripComment(line: string): string {
+  return line.split(";")[0].trim();
+}
+
+function splitArgs(text: string): string[] {
+  return text
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function normalizePath(base: string, includePath: string): string {
+  if (includePath.startsWith("<") && includePath.endsWith(">")) {
+    return includePath.slice(1, -1);
+  }
+  if (includePath.startsWith('"') && includePath.endsWith('"')) {
+    const raw = includePath.slice(1, -1);
+    const slash = base.lastIndexOf("/");
+    return slash >= 0 ? `${base.slice(0, slash + 1)}${raw}` : raw;
+  }
+  return includePath;
+}
+
+function parseSource(
+  files: ProjectSource[],
+  path: string,
+  aliases: Map<string, number>,
+  raw: RawInstruction[],
+  labels: Map<string, number>,
+  diagnostics: CompileDiagnostic[],
+  included: Set<string>
+): void {
+  if (included.has(path)) {
+    return;
+  }
+  included.add(path);
+
+  if (path === "std/aliases.inc") {
+    for (const [name, reg] of stdAliases) {
+      aliases.set(name, reg);
+    }
+    return;
+  }
+  if (path === "std/screen.inc") {
+    parseSource(files, "std/aliases.inc", aliases, raw, labels, diagnostics, included);
+    raw.push(...screenInstructions);
+    return;
+  }
+
+  const file = files.find((candidate) => candidate.path === path);
+  if (!file) {
+    addDiagnostic(diagnostics, path, 0, "could not open include");
+    return;
+  }
+
+  const lines = file.content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; ++index) {
+    const lineNumber = index + 1;
+    const line = stripComment(lines[index]);
+    if (!line) {
+      continue;
+    }
+    if (line.startsWith(".include")) {
+      const includePath = line.slice(".include".length).trim();
+      parseSource(files, normalizePath(path, includePath), aliases, raw, labels, diagnostics, included);
+      continue;
+    }
+    if (line.startsWith(".alias")) {
+      const parts = line.split(/\s+/);
+      const match = /^r(\d+)$/.exec(parts[2] ?? "");
+      if (parts.length !== 3 || !match) {
+        addDiagnostic(diagnostics, path, lineNumber, "invalid alias");
+        continue;
+      }
+      aliases.set(parts[1], Number(match[1]));
+      continue;
+    }
+    if (line.endsWith(":")) {
+      labels.set(line.slice(0, -1), raw.length);
+      continue;
+    }
+    const split = line.search(/\s/);
+    const op = (split >= 0 ? line.slice(0, split) : line).toLowerCase();
+    const args = split >= 0 ? splitArgs(line.slice(split + 1)) : [];
+    raw.push({ op, args, file: path, line: lineNumber });
+  }
+}
+
+function parseOperand(
+  token: string,
+  instruction: RawInstruction,
+  operandIndex: number,
+  aliases: Map<string, number>,
+  labels: Map<string, number>,
+  diagnostics: CompileDiagnostic[]
+): Operand {
+  if (branchTargets.get(instruction.op)?.includes(operandIndex)) {
+    const target = labels.get(token);
+    if (target === undefined) {
+      addDiagnostic(diagnostics, instruction.file, instruction.line, `unknown label: ${token}`);
+      return { kind: "immediate", value: 0 };
+    }
+    return { kind: "immediate", value: target };
+  }
+
+  const register = aliases.get(token);
+  if (register !== undefined) {
+    return { kind: "register", reg: register };
+  }
+  const rawRegister = /^r(\d+)$/.exec(token);
+  if (rawRegister) {
+    return { kind: "register", reg: Number(rawRegister[1]) };
+  }
+  const value = Number(token);
+  if (!Number.isFinite(value)) {
+    addDiagnostic(diagnostics, instruction.file, instruction.line, `invalid operand: ${token}`);
+    return { kind: "immediate", value: 0 };
+  }
+  return { kind: "immediate", value };
+}
+
+function assemble(files: ProjectSource[], main: string): { instructions: Instruction[]; diagnostics: CompileDiagnostic[] } {
+  const aliases = new Map(builtinAliases);
+  const raw: RawInstruction[] = [];
+  const labels = new Map<string, number>();
+  const diagnostics: CompileDiagnostic[] = [];
+  parseSource(files, main, aliases, raw, labels, diagnostics, new Set());
+
+  const instructions = raw.map((instruction) => {
+    const expected = operandCounts.get(instruction.op);
+    if (expected === undefined) {
+      addDiagnostic(diagnostics, instruction.file, instruction.line, `unknown op: ${instruction.op}`);
+    } else if (instruction.args.length !== expected) {
+      addDiagnostic(diagnostics, instruction.file, instruction.line, `${instruction.op} expects ${expected} operands`);
+    }
+    const destinations = destinationOperands.get(instruction.op) ?? [];
+    const operands = instruction.args.map((token, index) =>
+      parseOperand(token, instruction, index, aliases, labels, diagnostics)
+    );
+    for (const index of destinations) {
+      if (operands[index]?.kind !== "register") {
+        addDiagnostic(diagnostics, instruction.file, instruction.line, "destination must be a register");
+      }
+    }
+    return { op: instruction.op, operands, file: instruction.file, line: instruction.line };
+  });
+
+  return { instructions, diagnostics };
+}
+
+function wgslFloat(value: number): string {
+  return Number.isInteger(value) ? `${value}.0` : String(value);
+}
+
+function readOperand(operand: Operand): string {
+  return operand.kind === "register" ? `r[${operand.reg}]` : wgslFloat(operand.value);
+}
+
+function writeRegister(operand: Operand, expression: string): string {
+  return operand.kind === "register" ? `r[${operand.reg}] = ${expression};` : "";
+}
+
+function target(operand: Operand): number {
+  return operand.kind === "immediate" ? operand.value : -1;
+}
+
+function header(maxSteps: number): string {
+  return `struct AstInputs {
+    time: f32,
+    time_delta: f32,
+    frame: f32,
+    width: f32,
+    height: f32,
+    mouse_x: f32,
+    mouse_y: f32,
+    mouse_down: f32,
+    mouse_click_x: f32,
+    mouse_click_y: f32,
+    wall_clock_seconds: f32,
+    year: f32,
+    month: f32,
+    day: f32,
+    channel0: vec4<f32>,
+    channel1: vec4<f32>,
+    channel2: vec4<f32>,
+    channel3: vec4<f32>,
+    keys: array<vec4<f32>, 128>,
+    mouse_buttons: array<vec4<f32>, 2>,
+    mouse_wheel: vec4<f32>,
+    gamepad_buttons: array<vec4<f32>, 8>,
+    gamepad_axes: array<vec4<f32>, 4>,
+};
+
+@group(0) @binding(0) var output_texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var<uniform> ast_inputs: AstInputs;
+@group(0) @binding(2) var channel0_texture: texture_2d<f32>;
+@group(0) @binding(3) var channel1_texture: texture_2d<f32>;
+@group(0) @binding(4) var channel2_texture: texture_2d<f32>;
+@group(0) @binding(5) var channel3_texture: texture_2d<f32>;
+
+fn ast_safe_div(a: f32, b: f32) -> f32 { if (abs(b) <= 0.000001) { return 0.0; } return a / b; }
+fn ast_mod(a: f32, b: f32) -> f32 { if (abs(b) <= 0.000001) { return 0.0; } return a - floor(a / b) * b; }
+fn ast_eq(a: f32, b: f32) -> bool { return abs(a - b) <= 0.000001; }
+fn ast_unorm(v: f32) -> f32 { return clamp(v, 0.0, 1.0); }
+fn ast_byte(v: f32) -> f32 { return clamp(v, 0.0, 255.0) / 255.0; }
+
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= u32(ast_inputs.width) || gid.y >= u32(ast_inputs.height)) { return; }
+    var r: array<f32, 64>;
+    r[0] = f32(gid.x); r[1] = f32(gid.y); r[2] = ast_inputs.time; r[3] = ast_inputs.width;
+    r[4] = ast_inputs.height; r[5] = ast_inputs.mouse_x; r[6] = ast_inputs.mouse_y;
+    r[7] = ast_inputs.mouse_down; r[8] = ast_inputs.mouse_click_x; r[9] = ast_inputs.mouse_click_y;
+    r[10] = ast_inputs.frame; r[11] = ast_inputs.time_delta; r[12] = ast_inputs.wall_clock_seconds;
+    r[13] = ast_inputs.year; r[14] = ast_inputs.month; r[15] = ast_inputs.day;
+    var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    var pc: i32 = 0;
+    var steps: i32 = 0;
+    var call_stack: array<i32, 32>;
+    var call_depth: i32 = 0;
+    loop {
+        if (pc < 0 || steps >= ${maxSteps}) { break; }
+        steps = steps + 1;
+        switch (pc) {
+`;
+}
+
+function emitInstruction(instruction: Instruction, pc: number, programSize: number): string {
+  const o = instruction.operands;
+  const next = pc + 1;
+  const line = `            // ${instruction.file}:${instruction.line}\n`;
+  switch (instruction.op) {
+    case "mov":
+      return `${line}            ${writeRegister(o[0], readOperand(o[1]))}\n            pc = ${next};\n`;
+    case "add":
+      return `${line}            ${writeRegister(o[0], `${readOperand(o[1])} + ${readOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "sub":
+      return `${line}            ${writeRegister(o[0], `${readOperand(o[1])} - ${readOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "mul":
+      return `${line}            ${writeRegister(o[0], `${readOperand(o[1])} * ${readOperand(o[2])}`)}\n            pc = ${next};\n`;
+    case "div":
+    case "norm":
+      return `${line}            ${writeRegister(o[0], `ast_safe_div(${readOperand(o[1])}, ${readOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "sin":
+    case "cos":
+    case "abs":
+    case "floor":
+      return `${line}            ${writeRegister(o[0], `${instruction.op}(${readOperand(o[1])})`)}\n            pc = ${next};\n`;
+    case "sqrt":
+      return `${line}            ${writeRegister(o[0], `sqrt(max(0.0, ${readOperand(o[1])}))`)}\n            pc = ${next};\n`;
+    case "fract":
+      return `${line}            ${writeRegister(o[0], `${readOperand(o[1])} - floor(${readOperand(o[1])})`)}\n            pc = ${next};\n`;
+    case "min":
+    case "max":
+      return `${line}            ${writeRegister(o[0], `${instruction.op}(${readOperand(o[1])}, ${readOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "mod":
+      return `${line}            ${writeRegister(o[0], `ast_mod(${readOperand(o[1])}, ${readOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "lt":
+      return `${line}            ${writeRegister(o[0], `select(0.0, 1.0, ${readOperand(o[1])} < ${readOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "gt":
+      return `${line}            ${writeRegister(o[0], `select(0.0, 1.0, ${readOperand(o[1])} > ${readOperand(o[2])})`)}\n            pc = ${next};\n`;
+    case "eq":
+      return `${line}            ${writeRegister(o[0], `select(0.0, 1.0, ast_eq(${readOperand(o[1])}, ${readOperand(o[2])}))`)}\n            pc = ${next};\n`;
+    case "jmp":
+      return `${line}            pc = ${target(o[0])};\n`;
+    case "jnz":
+      return `${line}            if (${readOperand(o[0])} != 0.0) { pc = ${target(o[1])}; } else { pc = ${next}; }\n`;
+    case "jz":
+      return `${line}            if (${readOperand(o[0])} == 0.0) { pc = ${target(o[1])}; } else { pc = ${next}; }\n`;
+    case "jlt":
+    case "jle":
+    case "jgt":
+    case "jge":
+    case "jeq":
+    case "jne": {
+      const op = new Map([
+        ["jlt", "<"],
+        ["jle", "<="],
+        ["jgt", ">"],
+        ["jge", ">="]
+      ]).get(instruction.op);
+      const condition =
+        instruction.op === "jeq"
+          ? `ast_eq(${readOperand(o[0])}, ${readOperand(o[1])})`
+          : instruction.op === "jne"
+            ? `!ast_eq(${readOperand(o[0])}, ${readOperand(o[1])})`
+            : `${readOperand(o[0])} ${op} ${readOperand(o[1])}`;
+      return `${line}            if (${condition}) { pc = ${target(o[2])}; } else { pc = ${next}; }\n`;
+    }
+    case "call":
+      return `${line}            if (call_depth >= 32) { pc = -1; } else { call_stack[call_depth] = ${next}; call_depth = call_depth + 1; pc = ${target(o[0])}; }\n`;
+    case "ret":
+      return `${line}            if (call_depth > 0) { call_depth = call_depth - 1; pc = call_stack[call_depth]; } else { pc = ${programSize}; }\n`;
+    case "out":
+      return `${line}            color = vec4<f32>(ast_unorm(${readOperand(o[0])}), ast_unorm(${readOperand(o[1])}), ast_unorm(${readOperand(o[2])}), ast_unorm(${readOperand(o[3])}));\n            pc = ${next};\n`;
+    case "out8":
+      return `${line}            color = vec4<f32>(ast_byte(${readOperand(o[0])}), ast_byte(${readOperand(o[1])}), ast_byte(${readOperand(o[2])}), ast_byte(${readOperand(o[3])}));\n            pc = ${next};\n`;
+    case "halt":
+      return `${line}            pc = ${programSize};\n`;
+    default:
+      return `${line}            pc = -1;\n`;
+  }
+}
+
+export function compileAsmToWgsl(files: ProjectSource[], main: string, maxSteps = 4096): CompileResult {
+  const { instructions, diagnostics } = assemble(files, main);
+  for (const instruction of instructions) {
+    if (!emittedOps.has(instruction.op)) {
+      addDiagnostic(diagnostics, instruction.file, instruction.line, `opcode '${instruction.op}' is not supported by the browser compiler yet`);
+    }
+  }
+  if (diagnostics.length > 0) {
+    return { wgsl: "", diagnostics };
+  }
+  let wgsl = header(maxSteps);
+  instructions.forEach((instruction, pc) => {
+    wgsl += `        case ${pc}: {\n`;
+    wgsl += emitInstruction(instruction, pc, instructions.length);
+    wgsl += "        }\n";
+  });
+  wgsl += `        default: { pc = -1; }
+        }
+    }
+    textureStore(output_texture, vec2<i32>(i32(gid.x), i32(gid.y)), color);
+}
+`;
+  return { wgsl, diagnostics: [] };
+}

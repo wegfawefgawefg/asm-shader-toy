@@ -68,8 +68,9 @@ program keeps running.
 ## Browser Prototype
 
 The `web/` app is the first WebGPU/browser slice. It has a multi-file project
-editor, WGSL editor, import/export JSON, compressed share URLs, and a WebGPU
-preview canvas with nearest-neighbor scaling.
+editor, prototype asm-to-WGSL compilation for the core language subset, a WGSL
+editor, import/export JSON, compressed share URLs, and a WebGPU preview canvas
+with nearest-neighbor scaling.
 
 Run it locally:
 
@@ -78,8 +79,9 @@ cd web
 npm run dev
 ```
 
-Browser-side asm compilation is not wired yet. Use the native CLI to emit WGSL,
-then paste it into the WGSL panel:
+The browser compiler currently covers includes, aliases, labels, branches,
+calls, arithmetic, and color output. For texture/media/buffer examples, use the
+native CLI to emit WGSL, then paste it into the WGSL panel:
 
 ```sh
 ./build/asm-shader-toy examples/basics/time_pulse.asm --emit-wgsl -

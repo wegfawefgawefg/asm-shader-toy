@@ -1,4 +1,5 @@
 import "./styles.css";
+import { compileAsmToWgsl } from "./compiler";
 import { decodeProject, encodeProject, makeDefaultProject, parseSize, sizePresets, type ProjectBundle } from "./project";
 import { createProgram, destroyProgram, initWebGpu, renderFrame } from "./webgpu";
 
@@ -51,7 +52,8 @@ appRoot.innerHTML = `
         <label>Main <select data-main></select></label>
         <label>Size <select data-size></select></label>
         <label>Scale <input data-scale type="number" min="1" max="8" /></label>
-        <button class="button primary" data-action="run">Compile WGSL</button>
+        <button class="button primary" data-action="compile-asm">Compile ASM</button>
+        <button class="button" data-action="run">Run WGSL</button>
         <button class="button" data-action="pause">Pause</button>
       </div>
       <div class="split">
@@ -151,6 +153,21 @@ async function compileWgsl(): Promise<void> {
   }
 }
 
+async function compileAsm(): Promise<void> {
+  saveCurrentFile();
+  const result = compileAsmToWgsl(state.project.files, state.project.settings.main);
+  if (result.diagnostics.length > 0) {
+    diagnostics.textContent = result.diagnostics
+      .map((diagnostic) => `${diagnostic.file}:${diagnostic.line}: ${diagnostic.message}`)
+      .join("\n");
+    statusText.textContent = "ASM compile failed";
+    return;
+  }
+  state.project.settings.wgsl = result.wgsl;
+  wgslEditor.value = result.wgsl;
+  await compileWgsl();
+}
+
 function tick(): void {
   if (state.running && program) {
     renderFrame(gpuContext, program, state.project.settings, state.frame, state.startSeconds);
@@ -185,6 +202,9 @@ appRoot.addEventListener("click", (event) => {
   }
   if (action === "run") {
     void compileWgsl();
+  }
+  if (action === "compile-asm") {
+    void compileAsm();
   }
   if (action === "pause") {
     state.running = !state.running;

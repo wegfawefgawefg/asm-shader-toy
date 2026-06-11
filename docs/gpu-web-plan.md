@@ -40,8 +40,10 @@ is an accelerating backend for programs that fit the validated subset.
 - A browser app scaffold exists under `web/`. It can edit a multi-file project,
   import/export JSON bundles, copy compressed share URLs, edit WGSL, and run
   that WGSL through WebGPU into a nearest-neighbor canvas. Browser-side asm
-  compilation, media channels, feedback buffers, and native WebGPU execution are
-  still unimplemented.
+  compilation exists for a prototype core subset covering includes, aliases,
+  labels, branches, calls, arithmetic, and output. Browser texture/media
+  channels, feedback buffers, and native WebGPU execution are still
+  unimplemented.
 
 ## Why WGSL First
 

@@ -40,66 +40,19 @@ export function parseSize(value: ProjectSettings["size"]): { width: number; heig
 
 const defaultAsm = `.include <std/screen.inc>
 
-; Browser compiler parity is not wired yet.
-; For now, use the native CLI to emit WGSL:
-; ./build/asm-shader-toy examples/basics/time_pulse.asm --emit-wgsl -
-
 norm tmp0, px, width
 norm tmp1, py, height
 out tmp0, tmp1, 0.5, 1.0
 `;
 
-const defaultWgsl = `struct AstInputs {
-    time: f32,
-    time_delta: f32,
-    frame: f32,
-    width: f32,
-    height: f32,
-    mouse_x: f32,
-    mouse_y: f32,
-    mouse_down: f32,
-    mouse_click_x: f32,
-    mouse_click_y: f32,
-    wall_clock_seconds: f32,
-    year: f32,
-    month: f32,
-    day: f32,
-    channel0: vec4<f32>,
-    channel1: vec4<f32>,
-    channel2: vec4<f32>,
-    channel3: vec4<f32>,
-    keys: array<vec4<f32>, 128>,
-    mouse_buttons: array<vec4<f32>, 2>,
-    mouse_wheel: vec4<f32>,
-    gamepad_buttons: array<vec4<f32>, 8>,
-    gamepad_axes: array<vec4<f32>, 4>,
-};
-
-@group(0) @binding(0) var output_texture: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var<uniform> ast_inputs: AstInputs;
-@group(0) @binding(2) var channel0_texture: texture_2d<f32>;
-@group(0) @binding(3) var channel1_texture: texture_2d<f32>;
-@group(0) @binding(4) var channel2_texture: texture_2d<f32>;
-@group(0) @binding(5) var channel3_texture: texture_2d<f32>;
-
-@compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x >= u32(ast_inputs.width) || gid.y >= u32(ast_inputs.height)) {
-        return;
-    }
-    let uv = vec2<f32>(f32(gid.x) / ast_inputs.width, f32(gid.y) / ast_inputs.height);
-    let pulse = 0.5 + 0.5 * sin(ast_inputs.time * 2.0);
-    let color = vec4<f32>(uv.x, uv.y, pulse, 1.0);
-    textureStore(output_texture, vec2<i32>(i32(gid.x), i32(gid.y)), color);
-}
-`;
-
 export function makeDefaultProject(): ProjectBundle {
+  const files = [{ path: "main.asm", content: defaultAsm }];
+  const compiled = compileAsmToWgsl(files, "main.asm");
   return {
-    files: [{ path: "main.asm", content: defaultAsm }],
+    files,
     settings: {
       main: "main.asm",
-      wgsl: defaultWgsl,
+      wgsl: compiled.wgsl,
       size: "gba",
       scale: 4
     }
@@ -171,3 +124,4 @@ export async function decodeProject(hash: string): Promise<ProjectBundle | null>
     return null;
   }
 }
+import { compileAsmToWgsl } from "./compiler";
