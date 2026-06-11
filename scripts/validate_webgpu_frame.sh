@@ -69,3 +69,9 @@ run_case "noise_field" \
     --noise0 42 \
     --time 0.5 \
     --frame 30
+
+run_case "feedback_ramp" \
+    "${repo_root}/examples/buffers/ramp_display.asm" \
+    --buffer0 "${repo_root}/examples/buffers/ramp_buffer.asm" \
+    --size 32x24 \
+    --frames 4

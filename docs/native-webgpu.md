@@ -34,14 +34,20 @@ headless renderer for deterministic single-image programs:
   --size 64x64 \
   --noise0 42 \
   --compare-cpu
+
+./build-webgpu-probe/ast-webgpu-frame examples/buffers/ramp_display.asm \
+  --buffer0 examples/buffers/ramp_buffer.asm \
+  --size 32x24 \
+  --frames 4 \
+  --compare-cpu
 ```
 
 It dispatches emitted asm WGSL, copies the storage texture back to CPU memory,
 optionally compares the result with the CPU VM, and writes a binary PPM frame
-when `--output` is provided. Static image channels and generated noise channels
-are uploaded as `rgba8unorm` textures and use the same metadata uniforms as the
-CPU VM. SDL presentation, streaming media channels, and feedback buffers are
-still future native WebGPU work.
+when `--output` is provided. Static image channels, generated noise channels,
+and feedback buffer passes are uploaded or rendered as `rgba8unorm` textures and
+use the same metadata uniforms as the CPU VM. SDL presentation and streaming
+media channels are still future native WebGPU work.
 
 Run the repeatable native GPU parity gate:
 

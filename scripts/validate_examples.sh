@@ -27,6 +27,9 @@ grep -q "ast_key_state" /tmp/asm-shader-toy-live-controls.wgsl
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
     --dry-run
+./build/asm-shader-toy examples/buffers/ramp_display.asm \
+    --buffer0 examples/buffers/ramp_buffer.asm \
+    --dry-run
 rm -rf /tmp/asm-shader-toy-wgsl-bundle
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
@@ -71,6 +74,10 @@ grep -q "channel0_texture" /tmp/asm-shader-toy-image-passthrough.wgsl
 ./build/asm-shader-toy examples/input/mouse_rings.asm --no-graphics --frames 2
 ./build/asm-shader-toy examples/buffers/life_display.asm \
     --buffer0 examples/buffers/life_buffer.asm \
+    --no-graphics \
+    --frames 4
+./build/asm-shader-toy examples/buffers/ramp_display.asm \
+    --buffer0 examples/buffers/ramp_buffer.asm \
     --no-graphics \
     --frames 4
 ./build/asm-shader-toy examples/multifile/main.asm --no-graphics --frames 2

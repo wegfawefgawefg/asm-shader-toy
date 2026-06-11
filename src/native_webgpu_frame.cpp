@@ -35,6 +35,7 @@ struct Args {
     int width = 240;
     int height = 160;
     int frame = 0;
+    int frames = 1;
     float time = 0.0F;
     float time_delta = 1.0F / 60.0F;
     int max_steps = 4096;
@@ -42,6 +43,7 @@ struct Args {
     int tolerance = 1;
     std::array<std::string, 4> channel_paths;
     std::array<std::string, 4> noise_specs;
+    std::array<std::string, 4> buffer_paths;
 };
 
 struct SizePreset {
@@ -111,9 +113,10 @@ std::optional<std::pair<int, int>> parse_size(std::string_view text) {
 void print_usage() {
     std::cerr
         << "usage: ast-webgpu-frame program.asm --output frame.ppm [--size gba|240x160]\n"
-        << "       [--frame N] [--time seconds] [--max-steps N] [--compare-cpu]\n"
+        << "       [--frame N] [--frames N] [--time seconds] [--max-steps N] [--compare-cpu]\n"
         << "       [--channel0 path] through [--channel3 path] load image inputs\n"
-        << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n";
+        << "       [--noise0 seed] through [--noise3 seed] load generated noise textures\n"
+        << "       [--buffer0 path] through [--buffer3 path] run feedback buffer passes\n";
 }
 
 std::optional<Args> parse_args(int argc, char** argv) {
@@ -159,6 +162,17 @@ std::optional<Args> parse_args(int argc, char** argv) {
             }
             args.frame = std::atoi(std::string{*value}.c_str());
             if (args.frame < 0) {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (arg == "--frames") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            args.frames = std::atoi(std::string{*value}.c_str());
+            if (args.frames <= 0) {
                 return std::nullopt;
             }
             continue;
@@ -227,6 +241,16 @@ std::optional<Args> parse_args(int argc, char** argv) {
                 }
             }
             args.noise_specs[static_cast<std::size_t>(channel)] = std::move(seed);
+            continue;
+        }
+        if (arg == "--buffer0" || arg == "--buffer1" || arg == "--buffer2" ||
+            arg == "--buffer3") {
+            const auto value = next();
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            const int buffer = static_cast<int>(arg.back() - '0');
+            args.buffer_paths[static_cast<std::size_t>(buffer)] = std::string{*value};
             continue;
         }
         if (!arg.empty() && arg.front() != '-' && args.program_path.empty()) {
@@ -339,6 +363,37 @@ bool load_channels(const Args& args, ast::ChannelSet& channels) {
         }
     }
     return true;
+}
+
+bool has_buffer_paths(const Args& args) {
+    for (const std::string& path : args.buffer_paths) {
+        if (!path.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+ast::ImageChannel make_buffer_channel(int width, int height,
+                                      const std::vector<std::uint32_t>& pixels) {
+    ast::ImageChannel channel;
+    channel.width = width;
+    channel.height = height;
+    channel.time = 0.0F;
+    channel.sample_rate = 0.0F;
+    channel.external_pixels = &pixels;
+    return channel;
+}
+
+ast::ImageChannel make_buffer_metadata_channel(int width, int height) {
+    ast::ImageChannel channel;
+    channel.width = width;
+    channel.height = height;
+    channel.time = 0.0F;
+    channel.sample_rate = 0.0F;
+    channel.external_pixels = nullptr;
+    channel.pixels = {0};
+    return channel;
 }
 
 wgpu::ShaderModule make_shader_module(wgpu::Device device, const char* source) {
@@ -456,6 +511,35 @@ wgpu::Texture make_channel_texture(WebGpuContext& context, const ast::ImageChann
     return texture;
 }
 
+wgpu::Texture make_render_texture(WebGpuContext& context, const Args& args) {
+    wgpu::TextureDescriptor descriptor{wgpu::Default};
+    descriptor.size = wgpu::Extent3D(static_cast<std::uint32_t>(args.width),
+                                     static_cast<std::uint32_t>(args.height), 1);
+    descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    descriptor.usage = wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::TextureBinding |
+                       wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
+    return context.device.createTexture(descriptor);
+}
+
+wgpu::Texture make_zero_render_texture(WebGpuContext& context, const Args& args) {
+    wgpu::Texture texture = make_render_texture(context, args);
+    constexpr std::uint32_t bytes_per_row_alignment = 256;
+    const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(args.width) * 4U;
+    const std::uint32_t bytes_per_row =
+        align_to(unpadded_bytes_per_row, bytes_per_row_alignment);
+    std::vector<std::uint8_t> zeroes(
+        static_cast<std::size_t>(bytes_per_row) * static_cast<std::size_t>(args.height));
+    wgpu::ImageCopyTexture destination{};
+    destination.texture = texture;
+    wgpu::TextureDataLayout layout{};
+    layout.bytesPerRow = bytes_per_row;
+    layout.rowsPerImage = static_cast<std::uint32_t>(args.height);
+    context.queue.writeTexture(destination, zeroes.data(), zeroes.size(), layout,
+                               wgpu::Extent3D(static_cast<std::uint32_t>(args.width),
+                                              static_cast<std::uint32_t>(args.height), 1));
+    return texture;
+}
+
 wgpu::BindGroupLayout make_asm_bind_group_layout(wgpu::Device device) {
     std::array<wgpu::BindGroupLayoutEntry, 6> entries{};
     entries[0].binding = 0;
@@ -506,8 +590,10 @@ std::vector<float> make_uniforms(const Args& args, const ast::ChannelSet& channe
     return values;
 }
 
-std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Program& program,
-                                           const Args& args, const ast::ChannelSet& channel_set) {
+bool dispatch_program(WebGpuContext& context, const ast::Program& program, const Args& args,
+                      const ast::ChannelSet& channel_set,
+                      const std::array<wgpu::TextureView, 4>& channel_views,
+                      wgpu::TextureView output_view) {
     const ast::WgslCompileResult compiled =
         ast::compile_wgsl(program, ast::WgslOptions{args.max_steps, 32});
     if (!compiled.ok()) {
@@ -515,17 +601,8 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
             std::cerr << diagnostic.file << ':' << diagnostic.line << ": " << diagnostic.message
                       << '\n';
         }
-        return {};
+        return false;
     }
-
-    wgpu::TextureDescriptor output_descriptor{wgpu::Default};
-    output_descriptor.size =
-        wgpu::Extent3D(static_cast<std::uint32_t>(args.width),
-                       static_cast<std::uint32_t>(args.height), 1);
-    output_descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
-    output_descriptor.usage = wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::CopySrc;
-    wgpu::Texture output = context.device.createTexture(output_descriptor);
-    wgpu::TextureView output_view = output.createView();
 
     wgpu::BufferDescriptor uniform_descriptor{};
     uniform_descriptor.size = uniform_byte_size;
@@ -533,19 +610,6 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     wgpu::Buffer uniform = context.device.createBuffer(uniform_descriptor);
     const std::vector<float> uniforms = make_uniforms(args, channel_set);
     context.queue.writeBuffer(uniform, 0, uniforms.data(), uniform_payload_byte_size);
-
-    std::array<wgpu::Texture, 4> channels{
-        make_channel_texture(context, channel_set.image[0]),
-        make_channel_texture(context, channel_set.image[1]),
-        make_channel_texture(context, channel_set.image[2]),
-        make_channel_texture(context, channel_set.image[3]),
-    };
-    std::array<wgpu::TextureView, 4> channel_views{
-        channels[0].createView(),
-        channels[1].createView(),
-        channels[2].createView(),
-        channels[3].createView(),
-    };
 
     wgpu::BindGroupLayout bind_group_layout = make_asm_bind_group_layout(context.device);
     WGPUBindGroupLayout raw_bind_group_layout = bind_group_layout;
@@ -562,7 +626,7 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     wgpu::ComputePipeline pipeline = context.device.createComputePipeline(pipeline_descriptor);
     if (pipeline == WGPUComputePipeline(nullptr)) {
         std::cerr << "could not create emitted asm WGSL compute pipeline\n";
-        return {};
+        return false;
     }
 
     std::array<wgpu::BindGroupEntry, 6> entries{};
@@ -583,9 +647,22 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     wgpu::BindGroup bind_group = context.device.createBindGroup(bind_descriptor);
     if (bind_group == WGPUBindGroup(nullptr)) {
         std::cerr << "could not create emitted asm WGSL bind group\n";
-        return {};
+        return false;
     }
 
+    wgpu::CommandEncoder encoder = context.device.createCommandEncoder();
+    wgpu::ComputePassEncoder pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bind_group, 0, nullptr);
+    pass.dispatchWorkgroups((static_cast<std::uint32_t>(args.width) + 7U) / 8U,
+                            (static_cast<std::uint32_t>(args.height) + 7U) / 8U, 1);
+    pass.end();
+    context.queue.submit(encoder.finish());
+    return true;
+}
+
+std::vector<std::uint8_t> read_texture_rgba(WebGpuContext& context, wgpu::Texture texture,
+                                            const Args& args) {
     constexpr std::uint32_t bytes_per_row_alignment = 256;
     const std::uint32_t unpadded_bytes_per_row = static_cast<std::uint32_t>(args.width) * 4U;
     const std::uint32_t bytes_per_row =
@@ -597,20 +674,13 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
     readback_descriptor.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
     wgpu::Buffer readback = context.device.createBuffer(readback_descriptor);
 
-    wgpu::CommandEncoder encoder = context.device.createCommandEncoder();
-    wgpu::ComputePassEncoder pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bind_group, 0, nullptr);
-    pass.dispatchWorkgroups((static_cast<std::uint32_t>(args.width) + 7U) / 8U,
-                            (static_cast<std::uint32_t>(args.height) + 7U) / 8U, 1);
-    pass.end();
-
     wgpu::ImageCopyTexture source{};
-    source.texture = output;
+    source.texture = texture;
     wgpu::ImageCopyBuffer destination{};
     destination.buffer = readback;
     destination.layout.bytesPerRow = bytes_per_row;
     destination.layout.rowsPerImage = static_cast<std::uint32_t>(args.height);
+    wgpu::CommandEncoder encoder = context.device.createCommandEncoder();
     encoder.copyTextureToBuffer(source, destination,
                                 wgpu::Extent3D(static_cast<std::uint32_t>(args.width),
                                                static_cast<std::uint32_t>(args.height), 1));
@@ -631,6 +701,37 @@ std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Pr
         std::memcpy(dst, src, static_cast<std::size_t>(unpadded_bytes_per_row));
     }
     return rgba;
+}
+
+std::array<wgpu::Texture, 4> make_base_channel_textures(WebGpuContext& context,
+                                                        const ast::ChannelSet& channel_set) {
+    return {
+        make_channel_texture(context, channel_set.image[0]),
+        make_channel_texture(context, channel_set.image[1]),
+        make_channel_texture(context, channel_set.image[2]),
+        make_channel_texture(context, channel_set.image[3]),
+    };
+}
+
+std::array<wgpu::TextureView, 4> make_views(std::array<wgpu::Texture, 4>& textures) {
+    return {
+        textures[0].createView(),
+        textures[1].createView(),
+        textures[2].createView(),
+        textures[3].createView(),
+    };
+}
+
+std::vector<std::uint8_t> render_gpu_frame(WebGpuContext& context, const ast::Program& program,
+                                           const Args& args, const ast::ChannelSet& channel_set) {
+    std::array<wgpu::Texture, 4> channels = make_base_channel_textures(context, channel_set);
+    std::array<wgpu::TextureView, 4> channel_views = make_views(channels);
+    wgpu::Texture output = make_render_texture(context, args);
+    wgpu::TextureView output_view = output.createView();
+    if (!dispatch_program(context, program, args, channel_set, channel_views, output_view)) {
+        return {};
+    }
+    return read_texture_rgba(context, output, args);
 }
 
 bool write_ppm(const std::string& path, int width, int height,
@@ -682,6 +783,165 @@ std::vector<std::uint8_t> render_cpu_frame(const ast::Program& program, const Ar
     return rgba;
 }
 
+Args args_for_frame(const Args& args, int offset) {
+    Args frame_args = args;
+    frame_args.frame = args.frame + offset;
+    frame_args.time = args.time + static_cast<float>(offset) * args.time_delta;
+    frame_args.frames = 1;
+    return frame_args;
+}
+
+std::vector<std::uint8_t> render_cpu_pipeline(
+    const ast::Program& image_program,
+    const std::array<std::optional<ast::Program>, 4>& buffer_programs, const Args& args,
+    const ast::ChannelSet& base_channels) {
+    std::array<std::vector<std::uint32_t>, 4> previous_buffers;
+    std::array<std::vector<std::uint32_t>, 4> current_buffers;
+    const std::size_t pixel_count = static_cast<std::size_t>(args.width * args.height);
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (buffer_programs[i].has_value()) {
+            previous_buffers[i].resize(pixel_count);
+            current_buffers[i].resize(pixel_count);
+        }
+    }
+
+    std::vector<std::uint32_t> packed;
+    for (int offset = 0; offset < args.frames; ++offset) {
+        const Args frame_args = args_for_frame(args, offset);
+        ast::ChannelSet previous_channels = base_channels;
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                previous_channels.image[i] =
+                    make_buffer_channel(args.width, args.height, previous_buffers[i]);
+            }
+        }
+
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (!buffer_programs[i].has_value()) {
+                continue;
+            }
+            ast::FrameInputs buffer_inputs;
+            buffer_inputs.width = frame_args.width;
+            buffer_inputs.height = frame_args.height;
+            buffer_inputs.time = frame_args.time;
+            buffer_inputs.time_delta = frame_args.time_delta;
+            buffer_inputs.frame = frame_args.frame;
+            buffer_inputs.year = 1970;
+            buffer_inputs.month = 1;
+            buffer_inputs.day = 1;
+            buffer_inputs.channels = &previous_channels;
+            ast::render_frame(*buffer_programs[i], buffer_inputs, current_buffers[i],
+                              ast::RunLimits{args.max_steps, 32});
+        }
+
+        ast::ChannelSet final_channels = base_channels;
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                final_channels.image[i] =
+                    make_buffer_channel(args.width, args.height, current_buffers[i]);
+            }
+        }
+
+        ast::FrameInputs image_inputs;
+        image_inputs.width = frame_args.width;
+        image_inputs.height = frame_args.height;
+        image_inputs.time = frame_args.time;
+        image_inputs.time_delta = frame_args.time_delta;
+        image_inputs.frame = frame_args.frame;
+        image_inputs.year = 1970;
+        image_inputs.month = 1;
+        image_inputs.day = 1;
+        image_inputs.channels = &final_channels;
+        ast::render_frame(image_program, image_inputs, packed, ast::RunLimits{args.max_steps, 32});
+
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                std::swap(previous_buffers[i], current_buffers[i]);
+            }
+        }
+    }
+
+    std::vector<std::uint8_t> rgba(packed.size() * 4U);
+    for (std::size_t i = 0; i < packed.size(); ++i) {
+        const std::uint32_t pixel = packed[i];
+        rgba[i * 4U + 0U] = static_cast<std::uint8_t>(pixel & 0xFFU);
+        rgba[i * 4U + 1U] = static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU);
+        rgba[i * 4U + 2U] = static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU);
+        rgba[i * 4U + 3U] = static_cast<std::uint8_t>((pixel >> 24U) & 0xFFU);
+    }
+    return rgba;
+}
+
+std::vector<std::uint8_t> render_gpu_pipeline(
+    WebGpuContext& context, const ast::Program& image_program,
+    const std::array<std::optional<ast::Program>, 4>& buffer_programs, const Args& args,
+    const ast::ChannelSet& base_channels) {
+    std::array<wgpu::Texture, 4> base_textures = make_base_channel_textures(context, base_channels);
+    std::array<wgpu::TextureView, 4> base_views = make_views(base_textures);
+
+    std::array<wgpu::Texture, 4> previous_buffers{};
+    std::array<wgpu::Texture, 4> current_buffers{};
+    std::array<wgpu::TextureView, 4> previous_buffer_views{};
+    std::array<wgpu::TextureView, 4> current_buffer_views{};
+    for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+        if (!buffer_programs[i].has_value()) {
+            continue;
+        }
+        previous_buffers[i] = make_zero_render_texture(context, args);
+        current_buffers[i] = make_zero_render_texture(context, args);
+        previous_buffer_views[i] = previous_buffers[i].createView();
+        current_buffer_views[i] = current_buffers[i].createView();
+    }
+
+    wgpu::Texture output = make_render_texture(context, args);
+    wgpu::TextureView output_view = output.createView();
+
+    for (int offset = 0; offset < args.frames; ++offset) {
+        const Args frame_args = args_for_frame(args, offset);
+        ast::ChannelSet previous_channels = base_channels;
+        std::array<wgpu::TextureView, 4> previous_views = base_views;
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                previous_channels.image[i] = make_buffer_metadata_channel(args.width, args.height);
+                previous_views[i] = previous_buffer_views[i];
+            }
+        }
+
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (!buffer_programs[i].has_value()) {
+                continue;
+            }
+            if (!dispatch_program(context, *buffer_programs[i], frame_args, previous_channels,
+                                  previous_views, current_buffer_views[i])) {
+                return {};
+            }
+        }
+
+        ast::ChannelSet final_channels = base_channels;
+        std::array<wgpu::TextureView, 4> final_views = base_views;
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                final_channels.image[i] = make_buffer_metadata_channel(args.width, args.height);
+                final_views[i] = current_buffer_views[i];
+            }
+        }
+
+        if (!dispatch_program(context, image_program, frame_args, final_channels, final_views,
+                              output_view)) {
+            return {};
+        }
+
+        for (std::size_t i = 0; i < buffer_programs.size(); ++i) {
+            if (buffer_programs[i].has_value()) {
+                std::swap(previous_buffers[i], current_buffers[i]);
+                std::swap(previous_buffer_views[i], current_buffer_views[i]);
+            }
+        }
+    }
+
+    return read_texture_rgba(context, output, args);
+}
+
 bool compare_frames(const std::vector<std::uint8_t>& gpu, const std::vector<std::uint8_t>& cpu,
                     int tolerance) {
     if (gpu.size() != cpu.size()) {
@@ -724,6 +984,22 @@ void print_diagnostics(const std::vector<ast::Diagnostic>& diagnostics) {
     }
 }
 
+bool assemble_buffer_programs(const Args& args,
+                              std::array<std::optional<ast::Program>, 4>& buffer_programs) {
+    for (std::size_t i = 0; i < args.buffer_paths.size(); ++i) {
+        if (args.buffer_paths[i].empty()) {
+            continue;
+        }
+        ast::AssembleResult assembled = ast::assemble_file(args.buffer_paths[i]);
+        if (!assembled.ok()) {
+            print_diagnostics(assembled.diagnostics);
+            return false;
+        }
+        buffer_programs[i] = std::move(assembled.program);
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -737,6 +1013,10 @@ int main(int argc, char** argv) {
     ast::AssembleResult assembled = ast::assemble_file(args.program_path);
     if (!assembled.ok()) {
         print_diagnostics(assembled.diagnostics);
+        return 1;
+    }
+    std::array<std::optional<ast::Program>, 4> buffer_programs;
+    if (!assemble_buffer_programs(args, buffer_programs)) {
         return 1;
     }
 
@@ -771,7 +1051,10 @@ int main(int argc, char** argv) {
         });
 
     const std::vector<std::uint8_t> gpu =
-        render_gpu_frame(context, assembled.program, args, channels);
+        has_buffer_paths(args)
+            ? render_gpu_pipeline(context, assembled.program, buffer_programs, args, channels)
+            : render_gpu_frame(context, assembled.program, args_for_frame(args, args.frames - 1),
+                               channels);
     if (gpu.empty()) {
         IMG_Quit();
         SDL_Quit();
@@ -779,7 +1062,11 @@ int main(int argc, char** argv) {
     }
 
     if (args.compare_cpu) {
-        const std::vector<std::uint8_t> cpu = render_cpu_frame(assembled.program, args, channels);
+        const std::vector<std::uint8_t> cpu =
+            has_buffer_paths(args)
+                ? render_cpu_pipeline(assembled.program, buffer_programs, args, channels)
+                : render_cpu_frame(assembled.program, args_for_frame(args, args.frames - 1),
+                                   channels);
         if (!compare_frames(gpu, cpu, args.tolerance)) {
             IMG_Quit();
             SDL_Quit();
