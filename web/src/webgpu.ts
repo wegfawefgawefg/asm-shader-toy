@@ -20,9 +20,12 @@ export type ProgramState = {
   uniformBuffer: GPUBuffer;
   outputTexture: GPUTexture;
   outputView: GPUTextureView;
+  renderBindGroup: GPUBindGroup;
   channelTextures: GPUTexture[];
+  channelViews: GPUTextureView[];
   channelMetadata: ChannelSetting[];
   bufferPasses: BufferPassState[];
+  imageBindGroups: [GPUBindGroup, GPUBindGroup];
   bufferReadIndex: number;
 };
 
@@ -32,7 +35,10 @@ type BufferPassState = {
   computePipeline: GPUComputePipeline;
   textures: [GPUTexture, GPUTexture];
   views: [GPUTextureView, GPUTextureView];
+  bindGroups: [GPUBindGroup, GPUBindGroup];
 };
+
+type PendingBufferPassState = Omit<BufferPassState, "bindGroups">;
 
 export type ChannelRuntimeSource = {
   audio?: {
@@ -391,8 +397,8 @@ export async function createProgram(
       return makeChannelTexture(device, channel);
     })
   );
-  const bufferPasses = await Promise.all(
-    (settings.buffers ?? []).slice(0, 4).map(async (buffer, channel): Promise<BufferPassState | null> => {
+  const pendingBufferPasses = await Promise.all(
+    (settings.buffers ?? []).slice(0, 4).map(async (buffer, channel): Promise<PendingBufferPassState | null> => {
       if (!buffer?.wgsl) {
         return null;
       }
@@ -413,6 +419,42 @@ export async function createProgram(
       };
     })
   );
+  const channelViews = channelTextures.map((texture) => texture.createView());
+  const pendingBuffers = pendingBufferPasses.filter((buffer): buffer is PendingBufferPassState => buffer !== null);
+  const previousChannelViews = (readIndex: number): GPUTextureView[] =>
+    channelViews.map((view, channel) => pendingBuffers.find((buffer) => buffer.channel === channel)?.views[readIndex] ?? view);
+  const currentChannelViews = (readIndex: number): GPUTextureView[] =>
+    channelViews.map((view, channel) => pendingBuffers.find((buffer) => buffer.channel === channel)?.views[1 - readIndex] ?? view);
+  const bufferPasses: BufferPassState[] = pendingBuffers.map((buffer) => ({
+    ...buffer,
+    bindGroups: [0, 1].map((readIndex) =>
+      device.createBindGroup({
+        layout: context.computeBindGroupLayout,
+        entries: [
+          { binding: 0, resource: buffer.views[1 - readIndex] },
+          { binding: 1, resource: { buffer: uniformBuffer } },
+          ...previousChannelViews(readIndex).map((view, index) => ({ binding: index + 2, resource: view }))
+        ]
+      })
+    ) as [GPUBindGroup, GPUBindGroup]
+  }));
+  const imageBindGroups = [0, 1].map((readIndex) =>
+    device.createBindGroup({
+      layout: context.computeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: outputView },
+        { binding: 1, resource: { buffer: uniformBuffer } },
+        ...currentChannelViews(readIndex).map((view, index) => ({ binding: index + 2, resource: view }))
+      ]
+    })
+  ) as [GPUBindGroup, GPUBindGroup];
+  const renderBindGroup = device.createBindGroup({
+    layout: context.renderPipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: context.sampler },
+      { binding: 1, resource: outputView }
+    ]
+  });
   return {
     source,
     sizeKey: `${size.width}x${size.height}`,
@@ -420,9 +462,12 @@ export async function createProgram(
     uniformBuffer,
     outputTexture,
     outputView,
+    renderBindGroup,
     channelTextures,
+    channelViews,
     channelMetadata: normalizedChannels.slice(0, 4),
-    bufferPasses: bufferPasses.filter((buffer): buffer is BufferPassState => buffer !== null),
+    bufferPasses,
+    imageBindGroups,
     bufferReadIndex: 0
   };
 }
@@ -524,48 +569,20 @@ export function renderFrame(
   updateLiveChannelTextures(context, program, channelSources);
   writeUniforms(device, program.uniformBuffer, settings, frame, start, channelSources, inputState);
 
-  const baseChannelViews = program.channelTextures.map((texture) => texture.createView());
   const readIndex = program.bufferReadIndex;
   const writeIndex = 1 - readIndex;
-  const previousBufferViews = new Map(program.bufferPasses.map((buffer) => [buffer.channel, buffer.views[readIndex]]));
-  const currentBufferViews = new Map(program.bufferPasses.map((buffer) => [buffer.channel, buffer.views[writeIndex]]));
-  const previousChannelViews = baseChannelViews.map((view, channel) => previousBufferViews.get(channel) ?? view);
-  const currentChannelViews = baseChannelViews.map((view, channel) => currentBufferViews.get(channel) ?? view);
 
-  const renderBindGroup = device.createBindGroup({
-    layout: context.renderPipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: context.sampler },
-      { binding: 1, resource: program.outputView }
-    ]
-  });
   const encoder = device.createCommandEncoder();
   for (const buffer of program.bufferPasses) {
-    const bindGroup = device.createBindGroup({
-      layout: context.computeBindGroupLayout,
-      entries: [
-        { binding: 0, resource: buffer.views[writeIndex] },
-        { binding: 1, resource: { buffer: program.uniformBuffer } },
-        ...previousChannelViews.map((view, index) => ({ binding: index + 2, resource: view }))
-      ]
-    });
     const pass = encoder.beginComputePass();
     pass.setPipeline(buffer.computePipeline);
-    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(0, buffer.bindGroups[readIndex]);
     pass.dispatchWorkgroups(Math.ceil(size.width / 8), Math.ceil(size.height / 8));
     pass.end();
   }
-  const imageBindGroup = device.createBindGroup({
-    layout: context.computeBindGroupLayout,
-    entries: [
-      { binding: 0, resource: program.outputView },
-      { binding: 1, resource: { buffer: program.uniformBuffer } },
-      ...currentChannelViews.map((view, index) => ({ binding: index + 2, resource: view }))
-    ]
-  });
   const computePass = encoder.beginComputePass();
   computePass.setPipeline(program.computePipeline);
-  computePass.setBindGroup(0, imageBindGroup);
+  computePass.setBindGroup(0, program.imageBindGroups[readIndex]);
   computePass.dispatchWorkgroups(Math.ceil(size.width / 8), Math.ceil(size.height / 8));
   computePass.end();
 
@@ -580,7 +597,7 @@ export function renderFrame(
     ]
   });
   renderPass.setPipeline(context.renderPipeline);
-  renderPass.setBindGroup(0, renderBindGroup);
+  renderPass.setBindGroup(0, program.renderBindGroup);
   renderPass.draw(6);
   renderPass.end();
 
