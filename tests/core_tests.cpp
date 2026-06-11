@@ -593,17 +593,38 @@ void test_wgsl_emits_arithmetic_control_and_output_subset() {
             "WGSL source writes the output texture");
 }
 
-void test_wgsl_reports_unsupported_ops() {
+void test_wgsl_emits_texture_and_channel_metadata_subset() {
     const ast::AssembleResult result = ast::assemble_source(R"(
         tex r16, r17, r18, r19, 0, 0.5, 0.5
-        out r16, r17, r18, r19
+        texel r20, r21, r22, r23, 1, 4, 5
+        chdim r24, r25, 0
+        chtime r26, 0
+        chsrate r27, 0
+        out r16, r21, r26, r19
+    )");
+
+    require(result.ok(), "WGSL texture fixture assembles");
+    const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
+    require(wgsl.ok(), "WGSL emitter accepts texture/channel metadata subset");
+    require(wgsl.source.find("@group(0) @binding(2) var channel0_texture") != std::string::npos,
+            "WGSL source declares channel texture bindings");
+    require(wgsl.source.find("fn ast_channel_meta") != std::string::npos,
+            "WGSL source declares channel metadata helper");
+    require(wgsl.source.find("textureLoad(channel0_texture") != std::string::npos,
+            "WGSL source samples channel textures");
+}
+
+void test_wgsl_reports_unsupported_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        key r16, 4
+        out8 r16, 0, 0, 255
     )");
 
     require(result.ok(), "unsupported WGSL fixture assembles");
     const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
     require(!wgsl.ok(), "WGSL emitter rejects unsupported ops");
     require(!wgsl.diagnostics.empty(), "WGSL unsupported op has diagnostics");
-    require(wgsl.diagnostics[0].message.find("tex") != std::string::npos,
+    require(wgsl.diagnostics[0].message.find("key") != std::string::npos,
             "WGSL unsupported op diagnostic names the opcode");
 }
 
@@ -756,6 +777,7 @@ int main() {
     test_ir_rejects_invalid_jump_target();
     test_cpu_runs_lowered_ir_program();
     test_wgsl_emits_arithmetic_control_and_output_subset();
+    test_wgsl_emits_texture_and_channel_metadata_subset();
     test_wgsl_reports_unsupported_ops();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();

@@ -26,6 +26,9 @@ grep -q "@compute @workgroup_size" /tmp/asm-shader-toy-time-pulse.wgsl
 ./build/asm-shader-toy examples/raymarch/planet_sphere.asm --dry-run
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --dry-run
 ./build/asm-shader-toy examples/textures/image_passthrough.asm --channel0 examples/assets/checker.png --dry-run
+./build/asm-shader-toy examples/textures/image_passthrough.asm \
+    --emit-wgsl /tmp/asm-shader-toy-image-passthrough.wgsl
+grep -q "channel0_texture" /tmp/asm-shader-toy-image-passthrough.wgsl
 ./build/asm-shader-toy examples/textures/multi_image_mix.asm \
     --channel0 examples/assets/checker.png \
     --channel1 examples/assets/bars.png \

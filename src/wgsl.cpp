@@ -136,15 +136,15 @@ bool supported_op(Op op) {
     case Op::Jge:
     case Op::Out:
     case Op::Out8:
-    case Op::Ret:
-    case Op::Halt:
-        return true;
-    case Op::Call:
     case Op::Tex:
     case Op::Texel:
     case Op::Chdim:
     case Op::Chtime:
     case Op::Chsrate:
+    case Op::Ret:
+    case Op::Halt:
+        return true;
+    case Op::Call:
     case Op::Key:
     case Op::Mbtn:
     case Op::Mwheel:
@@ -203,9 +203,17 @@ void emit_header(std::ostringstream& out, const WgslOptions& options) {
            "    year: f32,\n"
            "    month: f32,\n"
            "    day: f32,\n"
+           "    channel0: vec4<f32>,\n"
+           "    channel1: vec4<f32>,\n"
+           "    channel2: vec4<f32>,\n"
+           "    channel3: vec4<f32>,\n"
            "};\n\n"
            "@group(0) @binding(0) var output_texture: texture_storage_2d<rgba8unorm, write>;\n"
            "@group(0) @binding(1) var<uniform> ast_inputs: AstInputs;\n\n"
+           "@group(0) @binding(2) var channel0_texture: texture_2d<f32>;\n"
+           "@group(0) @binding(3) var channel1_texture: texture_2d<f32>;\n"
+           "@group(0) @binding(4) var channel2_texture: texture_2d<f32>;\n"
+           "@group(0) @binding(5) var channel3_texture: texture_2d<f32>;\n\n"
            "fn ast_safe_div(a: f32, b: f32) -> f32 {\n"
            "    if (abs(b) <= 0.000001) {\n"
            "        return 0.0;\n"
@@ -226,6 +234,24 @@ void emit_header(std::ostringstream& out, const WgslOptions& options) {
            "}\n\n"
            "fn ast_byte(v: f32) -> f32 {\n"
            "    return clamp(v, 0.0, 255.0) / 255.0;\n"
+           "}\n\n"
+           "fn ast_channel_meta(channel: i32) -> vec4<f32> {\n"
+           "    switch (channel) {\n"
+           "    case 0: { return ast_inputs.channel0; }\n"
+           "    case 1: { return ast_inputs.channel1; }\n"
+           "    case 2: { return ast_inputs.channel2; }\n"
+           "    case 3: { return ast_inputs.channel3; }\n"
+           "    default: { return vec4<f32>(0.0); }\n"
+           "    }\n"
+           "}\n\n"
+           "fn ast_channel_load(channel: i32, coord: vec2<i32>) -> vec4<f32> {\n"
+           "    switch (channel) {\n"
+           "    case 0: { return textureLoad(channel0_texture, coord, 0); }\n"
+           "    case 1: { return textureLoad(channel1_texture, coord, 0); }\n"
+           "    case 2: { return textureLoad(channel2_texture, coord, 0); }\n"
+           "    case 3: { return textureLoad(channel3_texture, coord, 0); }\n"
+           "    default: { return vec4<f32>(0.0); }\n"
+           "    }\n"
            "}\n\n"
            "@compute @workgroup_size(8, 8, 1)\n"
            "fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
@@ -447,16 +473,94 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << read_operand(o[3]) << "));\n"
             << "            pc = " << next_pc(pc) << ";\n";
         break;
+    case Op::Tex:
+        out << "            let tex_channel_" << pc << " = i32(" << read_operand(o[4]) << ");\n"
+            << "            let tex_meta_" << pc << " = ast_channel_meta(tex_channel_" << pc
+            << ");\n"
+            << "            if (tex_meta_" << pc << ".x <= 0.0 || tex_meta_" << pc
+            << ".y <= 0.0) {\n"
+            << "                " << write_register(o[0], "0.0") << '\n'
+            << "                " << write_register(o[1], "0.0") << '\n'
+            << "                " << write_register(o[2], "0.0") << '\n'
+            << "                " << write_register(o[3], "0.0") << '\n'
+            << "            } else {\n"
+            << "                let tex_w_" << pc << " = i32(tex_meta_" << pc << ".x);\n"
+            << "                let tex_h_" << pc << " = i32(tex_meta_" << pc << ".y);\n"
+            << "                let tex_x_" << pc << " = clamp(i32(floor(clamp("
+            << read_operand(o[5]) << ", 0.0, 1.0) * tex_meta_" << pc << ".x)), 0, tex_w_" << pc
+            << " - 1);\n"
+            << "                let tex_y_" << pc << " = clamp(i32(floor(clamp("
+            << read_operand(o[6]) << ", 0.0, 1.0) * tex_meta_" << pc << ".y)), 0, tex_h_" << pc
+            << " - 1);\n"
+            << "                let tex_sample_" << pc << " = ast_channel_load(tex_channel_" << pc
+            << ", vec2<i32>(tex_x_" << pc << ", tex_y_" << pc << "));\n"
+            << "                " << write_register(o[0], "tex_sample_" + std::to_string(pc) + ".r")
+            << '\n'
+            << "                " << write_register(o[1], "tex_sample_" + std::to_string(pc) + ".g")
+            << '\n'
+            << "                " << write_register(o[2], "tex_sample_" + std::to_string(pc) + ".b")
+            << '\n'
+            << "                " << write_register(o[3], "tex_sample_" + std::to_string(pc) + ".a")
+            << '\n'
+            << "            }\n"
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Texel:
+        out << "            let texel_channel_" << pc << " = i32(" << read_operand(o[4]) << ");\n"
+            << "            let texel_meta_" << pc << " = ast_channel_meta(texel_channel_" << pc
+            << ");\n"
+            << "            let texel_x_" << pc << " = i32(round(" << read_operand(o[5]) << "));\n"
+            << "            let texel_y_" << pc << " = i32(round(" << read_operand(o[6]) << "));\n"
+            << "            if (texel_meta_" << pc << ".x <= 0.0 || texel_meta_" << pc
+            << ".y <= 0.0 || texel_x_" << pc << " < 0 || texel_y_" << pc << " < 0 || texel_x_" << pc
+            << " >= i32(texel_meta_" << pc << ".x) || texel_y_" << pc << " >= i32(texel_meta_" << pc
+            << ".y)) {\n"
+            << "                " << write_register(o[0], "0.0") << '\n'
+            << "                " << write_register(o[1], "0.0") << '\n'
+            << "                " << write_register(o[2], "0.0") << '\n'
+            << "                " << write_register(o[3], "0.0") << '\n'
+            << "            } else {\n"
+            << "                let texel_sample_" << pc << " = ast_channel_load(texel_channel_"
+            << pc << ", vec2<i32>(texel_x_" << pc << ", texel_y_" << pc << "));\n"
+            << "                "
+            << write_register(o[0], "texel_sample_" + std::to_string(pc) + ".r") << '\n'
+            << "                "
+            << write_register(o[1], "texel_sample_" + std::to_string(pc) + ".g") << '\n'
+            << "                "
+            << write_register(o[2], "texel_sample_" + std::to_string(pc) + ".b") << '\n'
+            << "                "
+            << write_register(o[3], "texel_sample_" + std::to_string(pc) + ".a") << '\n'
+            << "            }\n"
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Chdim:
+        out << "            let chdim_meta_" << pc << " = ast_channel_meta(i32("
+            << read_operand(o[2]) << "));\n"
+            << "            " << write_register(o[0], "chdim_meta_" + std::to_string(pc) + ".x")
+            << '\n'
+            << "            " << write_register(o[1], "chdim_meta_" + std::to_string(pc) + ".y")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Chtime:
+        out << "            let chtime_meta_" << pc << " = ast_channel_meta(i32("
+            << read_operand(o[1]) << "));\n"
+            << "            " << write_register(o[0], "chtime_meta_" + std::to_string(pc) + ".z")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Chsrate:
+        out << "            let chsrate_meta_" << pc << " = ast_channel_meta(i32("
+            << read_operand(o[1]) << "));\n"
+            << "            " << write_register(o[0], "chsrate_meta_" + std::to_string(pc) + ".w")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
     case Op::Ret:
     case Op::Halt:
         out << "            pc = " << program_size << ";\n";
         break;
     case Op::Call:
-    case Op::Tex:
-    case Op::Texel:
-    case Op::Chdim:
-    case Op::Chtime:
-    case Op::Chsrate:
     case Op::Key:
     case Op::Mbtn:
     case Op::Mwheel:
