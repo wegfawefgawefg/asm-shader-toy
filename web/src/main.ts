@@ -13,6 +13,7 @@ import {
 } from "./project";
 import { makeTemplateProject, templateProjects } from "./templates";
 import {
+  configureCanvas,
   createProgram,
   destroyProgram,
   initWebGpu,
@@ -244,6 +245,9 @@ function syncCanvasSize(): void {
   const size = parseSize(state.project.settings.size);
   canvas.width = size.width * state.project.settings.scale;
   canvas.height = size.height * state.project.settings.scale;
+  if (gpuContext) {
+    configureCanvas(gpuContext);
+  }
 }
 
 function shaderMousePosition(event: PointerEvent | MouseEvent): { x: number; y: number } {

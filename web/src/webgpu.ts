@@ -62,6 +62,14 @@ export type BrowserInputState = {
   mouseWheelY: number;
 };
 
+export function configureCanvas(context: Pick<GpuContext, "canvasContext" | "device" | "format">): void {
+  context.canvasContext.configure({
+    device: context.device,
+    format: context.format,
+    alphaMode: "opaque"
+  });
+}
+
 const renderShader = `
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
@@ -70,15 +78,21 @@ struct VertexOut {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
-    var positions = array<vec2<f32>, 3>(
+    var positions = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0),
-        vec2<f32>(3.0, -1.0),
-        vec2<f32>(-1.0, 3.0)
+        vec2<f32>(1.0, -1.0),
+        vec2<f32>(-1.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+        vec2<f32>(1.0, -1.0),
+        vec2<f32>(1.0, 1.0)
     );
-    var uvs = array<vec2<f32>, 3>(
+    var uvs = array<vec2<f32>, 6>(
         vec2<f32>(0.0, 1.0),
-        vec2<f32>(2.0, 1.0),
-        vec2<f32>(0.0, -1.0)
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(1.0, 0.0)
     );
     var out: VertexOut;
     out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
@@ -134,7 +148,6 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
     throw new Error("Could not create WebGPU canvas context.");
   }
   const format = navigator.gpu.getPreferredCanvasFormat();
-  canvasContext.configure({ device, format, alphaMode: "opaque" });
 
   const sampler = device.createSampler({
     magFilter: "nearest",
@@ -170,7 +183,19 @@ export async function initWebGpu(canvas: HTMLCanvasElement): Promise<GpuContext>
     primitive: { topology: "triangle-list" }
   });
 
-  return { device, adapterLabel, canvasContext, format, sampler, renderPipeline, computeBindGroupLayout, computePipelineLayout, errors };
+  const context = {
+    device,
+    adapterLabel,
+    canvasContext,
+    format,
+    sampler,
+    renderPipeline,
+    computeBindGroupLayout,
+    computePipelineLayout,
+    errors
+  };
+  configureCanvas(context);
+  return context;
 }
 
 function makeFallbackTexture(device: GPUDevice): GPUTexture {
@@ -556,7 +581,7 @@ export function renderFrame(
   });
   renderPass.setPipeline(context.renderPipeline);
   renderPass.setBindGroup(0, renderBindGroup);
-  renderPass.draw(3);
+  renderPass.draw(6);
   renderPass.end();
 
   device.queue.submit([encoder.finish()]);
