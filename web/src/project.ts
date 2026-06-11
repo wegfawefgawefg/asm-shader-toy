@@ -21,12 +21,13 @@ export type ProjectBundle = {
 };
 
 export type ChannelSetting = {
-  kind?: "fallback" | "image" | "noise" | "webcam";
+  kind?: "fallback" | "image" | "noise" | "webcam" | "microphone";
   name: string;
   width: number;
   height: number;
   imageDataUrl?: string;
   seed?: string;
+  sampleRate?: number;
 };
 
 export const sizePresets: Record<SizePreset, { width: number; height: number }> = {
@@ -86,7 +87,8 @@ function normalizeChannel(channel: Partial<ChannelSetting> | undefined, index: n
     width: channel?.width || defaultSize,
     height: channel?.height || defaultSize,
     imageDataUrl: channel?.imageDataUrl,
-    seed: channel?.seed
+    seed: channel?.seed,
+    sampleRate: channel?.sampleRate
   };
 }
 

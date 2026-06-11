@@ -21,6 +21,7 @@ type AppState = {
 };
 
 type LiveChannelSource = ChannelRuntimeSource & {
+  audioContext?: AudioContext;
   stream?: MediaStream;
 };
 
@@ -179,7 +180,13 @@ function renderChannelControls(): void {
     webcamButton.dataset.action = "webcam-channel";
     webcamButton.dataset.channel = String(index);
     webcamButton.textContent = "Cam";
-    controls.append(seedInput, noiseButton, webcamButton);
+    const micButton = document.createElement("button");
+    micButton.className = "button channel-button";
+    micButton.type = "button";
+    micButton.dataset.action = "mic-channel";
+    micButton.dataset.channel = String(index);
+    micButton.textContent = "Mic";
+    controls.append(seedInput, noiseButton, webcamButton, micButton);
     const meta = document.createElement("div");
     meta.className = "channel-meta";
     if (channel.kind === "noise" || channel.seed) {
@@ -188,6 +195,10 @@ function renderChannelControls(): void {
       meta.textContent = channelSources.has(index)
         ? `${channel.width}x${channel.height} webcam mirrored`
         : "webcam disconnected";
+    } else if (channel.kind === "microphone") {
+      meta.textContent = channelSources.has(index)
+        ? `${channel.width}x${channel.height} mic ${channel.sampleRate ?? 0}hz`
+        : "microphone disconnected";
     } else if (channel.imageDataUrl) {
       meta.textContent = `${channel.width}x${channel.height} ${channel.name}`;
     } else {
@@ -246,6 +257,7 @@ function stopChannelSource(index: number): void {
     return;
   }
   source.video?.pause();
+  void source.audioContext?.close();
   source.stream?.getTracks().forEach((track) => track.stop());
   channelSources.delete(index);
 }
@@ -301,6 +313,43 @@ async function setChannelWebcam(index: number): Promise<void> {
     name: "webcam",
     width: Math.max(1, video.videoWidth),
     height: Math.max(1, video.videoHeight)
+  };
+  renderChannelControls();
+  await compileWgsl();
+}
+
+async function setChannelMicrophone(index: number): Promise<void> {
+  stopChannelSource(index);
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("getUserMedia is not available in this browser.");
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+  const audioContext = new AudioContext();
+  const sourceNode = audioContext.createMediaStreamSource(stream);
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.35;
+  sourceNode.connect(analyser);
+  const width = 512;
+  const height = 2;
+  channelSources.set(index, {
+    audioContext,
+    stream,
+    audio: {
+      analyser,
+      timeData: new Uint8Array(new ArrayBuffer(width)),
+      frequencyData: new Uint8Array(new ArrayBuffer(width)),
+      pixels: new Uint8Array(new ArrayBuffer(width * height * 4)),
+      width,
+      height
+    }
+  });
+  state.project.settings.channels[index] = {
+    kind: "microphone",
+    name: "microphone",
+    width,
+    height,
+    sampleRate: audioContext.sampleRate
   };
   renderChannelControls();
   await compileWgsl();
@@ -403,6 +452,13 @@ appRoot.addEventListener("click", (event) => {
     void setChannelWebcam(index).catch((error) => {
       diagnostics.textContent = error instanceof Error ? error.message : String(error);
       statusText.textContent = "Webcam failed";
+    });
+  }
+  if (action === "mic-channel") {
+    const index = Number((event.target as HTMLElement).dataset.channel);
+    void setChannelMicrophone(index).catch((error) => {
+      diagnostics.textContent = error instanceof Error ? error.message : String(error);
+      statusText.textContent = "Microphone failed";
     });
   }
 });

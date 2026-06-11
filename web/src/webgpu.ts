@@ -22,6 +22,14 @@ type ProgramState = {
 };
 
 export type ChannelRuntimeSource = {
+  audio?: {
+    analyser: AnalyserNode;
+    timeData: Uint8Array<ArrayBuffer>;
+    frequencyData: Uint8Array<ArrayBuffer>;
+    pixels: Uint8Array<ArrayBuffer>;
+    width: number;
+    height: number;
+  };
   video?: HTMLVideoElement;
   mirrorCanvas?: HTMLCanvasElement;
   mirrorContext?: CanvasRenderingContext2D;
@@ -137,6 +145,8 @@ function writeUniforms(device: GPUDevice, buffer: GPUBuffer, settings: ProjectSe
     const offset = 14 + channel * 4;
     values[offset] = metadata.width || 1;
     values[offset + 1] = metadata.height || 1;
+    values[offset + 2] = metadata.kind === "webcam" || metadata.kind === "microphone" ? now - start : 0;
+    values[offset + 3] = metadata.sampleRate ?? 0;
   }
   device.queue.writeBuffer(buffer, 0, values);
 }
@@ -175,6 +185,14 @@ function makeVideoTexture(device: GPUDevice, video: HTMLVideoElement): GPUTextur
   });
 }
 
+function makeLiveDataTexture(device: GPUDevice, width: number, height: number): GPUTexture {
+  return device.createTexture({
+    size: { width: Math.max(1, width), height: Math.max(1, height) },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+  });
+}
+
 export async function createProgram(
   context: GpuContext,
   source: string,
@@ -208,7 +226,12 @@ export async function createProgram(
   }
   const channelTextures = await Promise.all(
     normalizedChannels.slice(0, 4).map((channel, index) => {
-      const video = channelSources.get(index)?.video;
+      const source = channelSources.get(index);
+      const audio = source?.audio;
+      if (audio) {
+        return makeLiveDataTexture(device, audio.width, audio.height);
+      }
+      const video = source?.video;
       if (video) {
         return makeVideoTexture(device, video);
       }
@@ -254,6 +277,33 @@ function updateLiveChannelTextures(
 ): void {
   for (let channel = 0; channel < program.channelTextures.length; ++channel) {
     const source = channelSources.get(channel);
+    if (source?.audio) {
+      const { analyser, timeData, frequencyData, pixels, width, height } = source.audio;
+      analyser.getByteTimeDomainData(timeData);
+      analyser.getByteFrequencyData(frequencyData);
+      let offset = 0;
+      for (let x = 0; x < width; ++x) {
+        const value = timeData[x] ?? 128;
+        pixels[offset++] = value;
+        pixels[offset++] = value;
+        pixels[offset++] = value;
+        pixels[offset++] = 255;
+      }
+      for (let x = 0; x < width; ++x) {
+        const value = frequencyData[x] ?? 0;
+        pixels[offset++] = value;
+        pixels[offset++] = value;
+        pixels[offset++] = value;
+        pixels[offset++] = 255;
+      }
+      context.device.queue.writeTexture(
+        { texture: program.channelTextures[channel] },
+        pixels,
+        { bytesPerRow: width * 4, rowsPerImage: height },
+        { width, height }
+      );
+      continue;
+    }
     const video = source?.video;
     if (!source || !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       continue;

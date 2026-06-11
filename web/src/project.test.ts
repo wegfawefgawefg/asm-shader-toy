@@ -58,4 +58,25 @@ describe("project bundles", () => {
       height: 480
     });
   });
+
+  test("preserves browser microphone channel metadata without serializing streams", () => {
+    const project = normalizeProject({
+      files: [{ path: "main.asm", content: "out 0.0, 0.0, 0.0, 1.0\n" }],
+      settings: {
+        main: "main.asm",
+        wgsl: "",
+        size: "gba",
+        scale: 4,
+        channels: [{ kind: "microphone", name: "microphone", width: 512, height: 2, sampleRate: 48000 }]
+      }
+    });
+
+    expect(project.settings.channels[0]).toMatchObject({
+      kind: "microphone",
+      name: "microphone",
+      width: 512,
+      height: 2,
+      sampleRate: 48000
+    });
+  });
 });
