@@ -1,0 +1,507 @@
+#include "ast/wgsl.hpp"
+
+#include <cmath>
+#include <cstddef>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <string_view>
+
+namespace ast {
+namespace {
+
+void add_diag(std::vector<Diagnostic>& diagnostics, const IrInstruction& instruction,
+              std::string message) {
+    diagnostics.push_back(Diagnostic{instruction.file, instruction.line, std::move(message)});
+}
+
+std::string op_name(Op op) {
+    switch (op) {
+    case Op::Mov:
+        return "mov";
+    case Op::Add:
+        return "add";
+    case Op::Sub:
+        return "sub";
+    case Op::Mul:
+        return "mul";
+    case Op::Div:
+        return "div";
+    case Op::Sin:
+        return "sin";
+    case Op::Cos:
+        return "cos";
+    case Op::Sqrt:
+        return "sqrt";
+    case Op::Abs:
+        return "abs";
+    case Op::Floor:
+        return "floor";
+    case Op::Fract:
+        return "fract";
+    case Op::Min:
+        return "min";
+    case Op::Max:
+        return "max";
+    case Op::Mod:
+        return "mod";
+    case Op::Norm:
+        return "norm";
+    case Op::Lt:
+        return "lt";
+    case Op::Gt:
+        return "gt";
+    case Op::Eq:
+        return "eq";
+    case Op::Jmp:
+        return "jmp";
+    case Op::Jnz:
+        return "jnz";
+    case Op::Jz:
+        return "jz";
+    case Op::Jeq:
+        return "jeq";
+    case Op::Jne:
+        return "jne";
+    case Op::Jlt:
+        return "jlt";
+    case Op::Jle:
+        return "jle";
+    case Op::Jgt:
+        return "jgt";
+    case Op::Jge:
+        return "jge";
+    case Op::Call:
+        return "call";
+    case Op::Out:
+        return "out";
+    case Op::Out8:
+        return "out8";
+    case Op::Tex:
+        return "tex";
+    case Op::Texel:
+        return "texel";
+    case Op::Chdim:
+        return "chdim";
+    case Op::Chtime:
+        return "chtime";
+    case Op::Chsrate:
+        return "chsrate";
+    case Op::Key:
+        return "key";
+    case Op::Mbtn:
+        return "mbtn";
+    case Op::Mwheel:
+        return "mwheel";
+    case Op::Gbtn:
+        return "gbtn";
+    case Op::Gaxis:
+        return "gaxis";
+    case Op::Ret:
+        return "ret";
+    case Op::Halt:
+        return "halt";
+    }
+    return "unknown";
+}
+
+bool supported_op(Op op) {
+    switch (op) {
+    case Op::Mov:
+    case Op::Add:
+    case Op::Sub:
+    case Op::Mul:
+    case Op::Div:
+    case Op::Sin:
+    case Op::Cos:
+    case Op::Sqrt:
+    case Op::Abs:
+    case Op::Floor:
+    case Op::Fract:
+    case Op::Min:
+    case Op::Max:
+    case Op::Mod:
+    case Op::Norm:
+    case Op::Lt:
+    case Op::Gt:
+    case Op::Eq:
+    case Op::Jmp:
+    case Op::Jnz:
+    case Op::Jz:
+    case Op::Jeq:
+    case Op::Jne:
+    case Op::Jlt:
+    case Op::Jle:
+    case Op::Jgt:
+    case Op::Jge:
+    case Op::Out:
+    case Op::Out8:
+    case Op::Ret:
+    case Op::Halt:
+        return true;
+    case Op::Call:
+    case Op::Tex:
+    case Op::Texel:
+    case Op::Chdim:
+    case Op::Chtime:
+    case Op::Chsrate:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Mwheel:
+    case Op::Gbtn:
+    case Op::Gaxis:
+        return false;
+    }
+    return false;
+}
+
+std::string wgsl_float(float value) {
+    if (!std::isfinite(value)) {
+        return "0.0";
+    }
+    std::ostringstream out;
+    out << std::setprecision(9) << value;
+    std::string text = out.str();
+    if (text.find_first_of(".eE") == std::string::npos) {
+        text += ".0";
+    }
+    return text;
+}
+
+std::string read_operand(const Operand& operand) {
+    if (operand.kind == OperandKind::Register) {
+        return "r[" + std::to_string(operand.reg) + "]";
+    }
+    return wgsl_float(operand.value);
+}
+
+std::string write_register(const Operand& operand, std::string_view expression) {
+    return "r[" + std::to_string(operand.reg) + "] = " + std::string{expression} + ";";
+}
+
+int target_operand(const Operand& operand) {
+    return static_cast<int>(operand.value);
+}
+
+std::string next_pc(int pc) {
+    return std::to_string(pc + 1);
+}
+
+void emit_header(std::ostringstream& out, const WgslOptions& options) {
+    out << "struct AstInputs {\n"
+           "    time: f32,\n"
+           "    time_delta: f32,\n"
+           "    frame: f32,\n"
+           "    width: f32,\n"
+           "    height: f32,\n"
+           "    mouse_x: f32,\n"
+           "    mouse_y: f32,\n"
+           "    mouse_down: f32,\n"
+           "    mouse_click_x: f32,\n"
+           "    mouse_click_y: f32,\n"
+           "    wall_clock_seconds: f32,\n"
+           "    year: f32,\n"
+           "    month: f32,\n"
+           "    day: f32,\n"
+           "};\n\n"
+           "@group(0) @binding(0) var output_texture: texture_storage_2d<rgba8unorm, write>;\n"
+           "@group(0) @binding(1) var<uniform> ast_inputs: AstInputs;\n\n"
+           "fn ast_safe_div(a: f32, b: f32) -> f32 {\n"
+           "    if (abs(b) <= 0.000001) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    return a / b;\n"
+           "}\n\n"
+           "fn ast_mod(a: f32, b: f32) -> f32 {\n"
+           "    if (abs(b) <= 0.000001) {\n"
+           "        return 0.0;\n"
+           "    }\n"
+           "    return a - floor(a / b) * b;\n"
+           "}\n\n"
+           "fn ast_eq(a: f32, b: f32) -> bool {\n"
+           "    return abs(a - b) <= 0.000001;\n"
+           "}\n\n"
+           "fn ast_unorm(v: f32) -> f32 {\n"
+           "    return clamp(v, 0.0, 1.0);\n"
+           "}\n\n"
+           "fn ast_byte(v: f32) -> f32 {\n"
+           "    return clamp(v, 0.0, 255.0) / 255.0;\n"
+           "}\n\n"
+           "@compute @workgroup_size(8, 8, 1)\n"
+           "fn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n"
+           "    if (gid.x >= u32(ast_inputs.width) || gid.y >= u32(ast_inputs.height)) {\n"
+           "        return;\n"
+           "    }\n"
+           "    var r: array<f32, 64>;\n"
+           "    r[0] = f32(gid.x);\n"
+           "    r[1] = f32(gid.y);\n"
+           "    r[2] = ast_inputs.time;\n"
+           "    r[3] = ast_inputs.width;\n"
+           "    r[4] = ast_inputs.height;\n"
+           "    r[5] = ast_inputs.mouse_x;\n"
+           "    r[6] = ast_inputs.mouse_y;\n"
+           "    r[7] = ast_inputs.mouse_down;\n"
+           "    r[8] = ast_inputs.mouse_click_x;\n"
+           "    r[9] = ast_inputs.mouse_click_y;\n"
+           "    r[10] = ast_inputs.frame;\n"
+           "    r[11] = ast_inputs.time_delta;\n"
+           "    r[12] = ast_inputs.wall_clock_seconds;\n"
+           "    r[13] = ast_inputs.year;\n"
+           "    r[14] = ast_inputs.month;\n"
+           "    r[15] = ast_inputs.day;\n"
+           "    var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);\n"
+           "    var pc: i32 = 0;\n"
+           "    var steps: i32 = 0;\n"
+           "    loop {\n"
+        << "        if (pc < 0 || steps >= " << options.max_steps
+        << ") {\n"
+           "            break;\n"
+           "        }\n"
+           "        steps = steps + 1;\n"
+           "        switch (pc) {\n";
+}
+
+void emit_footer(std::ostringstream& out) {
+    out << "        default: {\n"
+           "            pc = -1;\n"
+           "        }\n"
+           "        }\n"
+           "    }\n"
+           "    textureStore(output_texture, vec2<i32>(i32(gid.x), i32(gid.y)), color);\n"
+           "}\n";
+}
+
+void emit_instruction(std::ostringstream& out, const IrInstruction& instruction, int pc,
+                      int program_size) {
+    const auto& o = instruction.operands;
+    out << "        case " << pc << ": {\n";
+    if (!instruction.file.empty()) {
+        out << "            // " << instruction.file << ':' << instruction.line << '\n';
+    }
+
+    switch (instruction.op) {
+    case Op::Mov:
+        out << "            " << write_register(o[0], read_operand(o[1])) << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Add:
+        out << "            "
+            << write_register(o[0], read_operand(o[1]) + " + " + read_operand(o[2])) << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Sub:
+        out << "            "
+            << write_register(o[0], read_operand(o[1]) + " - " + read_operand(o[2])) << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Mul:
+        out << "            "
+            << write_register(o[0], read_operand(o[1]) + " * " + read_operand(o[2])) << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Div:
+    case Op::Norm:
+        out << "            "
+            << write_register(o[0], "ast_safe_div(" + read_operand(o[1]) + ", " +
+                                        read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Sin:
+        out << "            " << write_register(o[0], "sin(" + read_operand(o[1]) + ")") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Cos:
+        out << "            " << write_register(o[0], "cos(" + read_operand(o[1]) + ")") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Sqrt:
+        out << "            " << write_register(o[0], "sqrt(max(0.0, " + read_operand(o[1]) + "))")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Abs:
+        out << "            " << write_register(o[0], "abs(" + read_operand(o[1]) + ")") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Floor:
+        out << "            " << write_register(o[0], "floor(" + read_operand(o[1]) + ")") << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Fract:
+        out << "            "
+            << write_register(o[0], read_operand(o[1]) + " - floor(" + read_operand(o[1]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Min:
+        out << "            "
+            << write_register(o[0], "min(" + read_operand(o[1]) + ", " + read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Max:
+        out << "            "
+            << write_register(o[0], "max(" + read_operand(o[1]) + ", " + read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Mod:
+        out << "            "
+            << write_register(o[0],
+                              "ast_mod(" + read_operand(o[1]) + ", " + read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Lt:
+        out << "            "
+            << write_register(o[0], "select(0.0, 1.0, " + read_operand(o[1]) + " < " +
+                                        read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Gt:
+        out << "            "
+            << write_register(o[0], "select(0.0, 1.0, " + read_operand(o[1]) + " > " +
+                                        read_operand(o[2]) + ")")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Eq:
+        out << "            "
+            << write_register(o[0], "select(0.0, 1.0, ast_eq(" + read_operand(o[1]) + ", " +
+                                        read_operand(o[2]) + "))")
+            << '\n'
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Jmp:
+        out << "            pc = " << target_operand(o[0]) << ";\n";
+        break;
+    case Op::Jnz:
+        out << "            if (" << read_operand(o[0]) << " != 0.0) {\n"
+            << "                pc = " << target_operand(o[1]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jz:
+        out << "            if (" << read_operand(o[0]) << " == 0.0) {\n"
+            << "                pc = " << target_operand(o[1]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jeq:
+        out << "            if (ast_eq(" << read_operand(o[0]) << ", " << read_operand(o[1])
+            << ")) {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jne:
+        out << "            if (!ast_eq(" << read_operand(o[0]) << ", " << read_operand(o[1])
+            << ")) {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jlt:
+        out << "            if (" << read_operand(o[0]) << " < " << read_operand(o[1]) << ") {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jle:
+        out << "            if (" << read_operand(o[0]) << " <= " << read_operand(o[1]) << ") {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jgt:
+        out << "            if (" << read_operand(o[0]) << " > " << read_operand(o[1]) << ") {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Jge:
+        out << "            if (" << read_operand(o[0]) << " >= " << read_operand(o[1]) << ") {\n"
+            << "                pc = " << target_operand(o[2]) << ";\n"
+            << "            } else {\n"
+            << "                pc = " << next_pc(pc) << ";\n"
+            << "            }\n";
+        break;
+    case Op::Out:
+        out << "            color = vec4<f32>(ast_unorm(" << read_operand(o[0]) << "), ast_unorm("
+            << read_operand(o[1]) << "), ast_unorm(" << read_operand(o[2]) << "), ast_unorm("
+            << read_operand(o[3]) << "));\n"
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Out8:
+        out << "            color = vec4<f32>(ast_byte(" << read_operand(o[0]) << "), ast_byte("
+            << read_operand(o[1]) << "), ast_byte(" << read_operand(o[2]) << "), ast_byte("
+            << read_operand(o[3]) << "));\n"
+            << "            pc = " << next_pc(pc) << ";\n";
+        break;
+    case Op::Ret:
+    case Op::Halt:
+        out << "            pc = " << program_size << ";\n";
+        break;
+    case Op::Call:
+    case Op::Tex:
+    case Op::Texel:
+    case Op::Chdim:
+    case Op::Chtime:
+    case Op::Chsrate:
+    case Op::Key:
+    case Op::Mbtn:
+    case Op::Mwheel:
+    case Op::Gbtn:
+    case Op::Gaxis:
+        out << "            pc = -1;\n";
+        break;
+    }
+    out << "        }\n";
+}
+
+} // namespace
+
+WgslCompileResult compile_wgsl(const IrProgram& program, const WgslOptions& options) {
+    WgslCompileResult result;
+    for (const IrInstruction& instruction : program.code) {
+        if (!supported_op(instruction.op)) {
+            add_diag(result.diagnostics, instruction,
+                     "opcode '" + op_name(instruction.op) +
+                         "' is not supported by WGSL emitter yet");
+        }
+    }
+    if (!result.ok()) {
+        return result;
+    }
+
+    std::ostringstream out;
+    emit_header(out, options);
+    for (int pc = 0; pc < static_cast<int>(program.code.size()); ++pc) {
+        emit_instruction(out, program.code[static_cast<std::size_t>(pc)], pc,
+                         static_cast<int>(program.code.size()));
+    }
+    emit_footer(out);
+    result.source = out.str();
+    return result;
+}
+
+WgslCompileResult compile_wgsl(const Program& program, const WgslOptions& options) {
+    const LowerIrResult lowered = lower_to_ir(program);
+    WgslCompileResult result;
+    if (!lowered.ok()) {
+        result.diagnostics = lowered.diagnostics;
+        return result;
+    }
+    return compile_wgsl(lowered.program, options);
+}
+
+} // namespace ast

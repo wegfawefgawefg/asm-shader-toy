@@ -196,7 +196,7 @@ struct RuntimeEnv {
     }
 };
 
-Rgba run_pixel_registers(const Program& program, Registers registers, const ChannelSet* channels,
+Rgba run_pixel_registers(const IrProgram& program, Registers registers, const ChannelSet* channels,
                          const InputState* input_state, const RunLimits& limits) {
     RuntimeEnv env{registers, channels, input_state};
     detail::execute_program(program, env, limits);
@@ -206,12 +206,30 @@ Rgba run_pixel_registers(const Program& program, Registers registers, const Chan
 } // namespace
 
 Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits) {
+    const LowerIrResult lowered = lower_to_ir(program);
+    if (!lowered.ok()) {
+        return Rgba{};
+    }
+    return run_pixel(lowered.program, inputs, limits);
+}
+
+Rgba run_pixel(const IrProgram& program, const PixelInputs& inputs, const RunLimits& limits) {
     Registers registers{};
     seed_inputs(registers, inputs);
     return run_pixel_registers(program, registers, inputs.channels, inputs.input_state, limits);
 }
 
 void render_frame(const Program& program, const FrameInputs& inputs,
+                  std::vector<std::uint32_t>& pixels, const RunLimits& limits) {
+    const LowerIrResult lowered = lower_to_ir(program);
+    if (!lowered.ok()) {
+        pixels.assign(static_cast<std::size_t>(inputs.width * inputs.height), pack_rgba(Rgba{}));
+        return;
+    }
+    render_frame(lowered.program, inputs, pixels, limits);
+}
+
+void render_frame(const IrProgram& program, const FrameInputs& inputs,
                   std::vector<std::uint32_t>& pixels, const RunLimits& limits) {
     pixels.resize(static_cast<std::size_t>(inputs.width * inputs.height));
     Registers base_registers{};

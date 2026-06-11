@@ -1,5 +1,7 @@
 #include "ast/assembler.hpp"
+#include "ast/ir.hpp"
 #include "ast/runtime.hpp"
+#include "ast/wgsl.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -510,6 +512,101 @@ void test_missing_live_input_queries_are_zero() {
             "missing live input snapshot reads as zero");
 }
 
+void test_ir_lowering_classifies_features_and_successors() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        tex r16, r17, r18, r19, 0, 0.5, 0.5
+        key r20, 4
+        jnz r20, lit
+        out8 0, 0, 0, 255
+        halt
+    lit:
+        chdim r21, r22, 0
+        out r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "IR feature fixture assembles");
+    const ast::LowerIrResult lowered = ast::lower_to_ir(result.program);
+    require(lowered.ok(), "IR lowering succeeds");
+    require(lowered.program.has_textures, "IR detects texture operations");
+    require(lowered.program.has_live_input, "IR detects live input operations");
+    require(lowered.program.has_channel_metadata, "IR detects channel metadata operations");
+    require(lowered.program.has_control_flow, "IR detects control flow");
+    require(lowered.program.has_output, "IR detects output operations");
+    require(lowered.program.code[2].successor_count == 2, "conditional branch has two successors");
+    require(lowered.program.code[2].successors[0] == 5, "conditional branch target is recorded");
+    require(lowered.program.code[2].successors[1] == 3,
+            "conditional branch fallthrough is recorded");
+    require(lowered.program.code[4].successor_count == 0, "halt has no successor");
+}
+
+void test_ir_rejects_invalid_jump_target() {
+    ast::Program program;
+    ast::Instruction instruction;
+    instruction.op = ast::Op::Jmp;
+    instruction.operand_count = 1;
+    instruction.operands[0] = ast::Operand{ast::OperandKind::Immediate, 0, 99.0F};
+    instruction.line = 1;
+    program.code.push_back(instruction);
+
+    const ast::LowerIrResult lowered = ast::lower_to_ir(program);
+    require(!lowered.ok(), "IR rejects jump targets outside the program");
+}
+
+void test_cpu_runs_lowered_ir_program() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        norm r16, px, width
+        norm r17, py, height
+        add r18, r16, r17
+        out r18, r16, r17, 1.0
+    )");
+
+    require(result.ok(), "IR runtime parity fixture assembles");
+    const ast::LowerIrResult lowered = ast::lower_to_ir(result.program);
+    require(lowered.ok(), "IR runtime parity fixture lowers");
+
+    const ast::PixelInputs inputs{60, 80, 240, 160, 0.0F};
+    const ast::Rgba from_program = ast::run_pixel(result.program, inputs);
+    const ast::Rgba from_ir = ast::run_pixel(lowered.program, inputs);
+    require(from_program.r == from_ir.r && from_program.g == from_ir.g &&
+                from_program.b == from_ir.b && from_program.a == from_ir.a,
+            "CPU Program and IR execution match");
+}
+
+void test_wgsl_emits_arithmetic_control_and_output_subset() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        mov r16, 0
+    loop:
+        add r16, r16, 1
+        jlt r16, 3, loop
+        out8 r16, 0, 0, 255
+        halt
+    )");
+
+    require(result.ok(), "WGSL fixture assembles");
+    const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
+    require(wgsl.ok(), "WGSL emitter accepts arithmetic/control/output subset");
+    require(wgsl.source.find("@compute @workgroup_size") != std::string::npos,
+            "WGSL source contains compute entrypoint");
+    require(wgsl.source.find("switch (pc)") != std::string::npos,
+            "WGSL source contains program-counter dispatch");
+    require(wgsl.source.find("textureStore") != std::string::npos,
+            "WGSL source writes the output texture");
+}
+
+void test_wgsl_reports_unsupported_ops() {
+    const ast::AssembleResult result = ast::assemble_source(R"(
+        tex r16, r17, r18, r19, 0, 0.5, 0.5
+        out r16, r17, r18, r19
+    )");
+
+    require(result.ok(), "unsupported WGSL fixture assembles");
+    const ast::WgslCompileResult wgsl = ast::compile_wgsl(result.program);
+    require(!wgsl.ok(), "WGSL emitter rejects unsupported ops");
+    require(!wgsl.diagnostics.empty(), "WGSL unsupported op has diagnostics");
+    require(wgsl.diagnostics[0].message.find("tex") != std::string::npos,
+            "WGSL unsupported op diagnostic names the opcode");
+}
+
 void test_file_dependencies_include_main_and_includes() {
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() / "asm-shader-toy-core-tests";
@@ -655,6 +752,11 @@ int main() {
     test_missing_channel_metadata_is_zero();
     test_live_input_queries();
     test_missing_live_input_queries_are_zero();
+    test_ir_lowering_classifies_features_and_successors();
+    test_ir_rejects_invalid_jump_target();
+    test_cpu_runs_lowered_ir_program();
+    test_wgsl_emits_arithmetic_control_and_output_subset();
+    test_wgsl_reports_unsupported_ops();
     test_file_dependencies_include_main_and_includes();
     test_includes_are_once_by_default();
     test_recursive_include_reports_error();

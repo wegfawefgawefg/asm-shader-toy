@@ -41,8 +41,8 @@ inline int jump_target(const Operand& operand) {
     return static_cast<int>(operand.value);
 }
 
-template <typename Env>
-StopReason execute_program(const Program& program, Env& env, const RunLimits& limits) {
+template <typename ProgramT, typename Env>
+StopReason execute_program(const ProgramT& program, Env& env, const RunLimits& limits) {
     int pc = 0;
     int steps = 0;
     std::array<int, 32> call_stack{};
@@ -56,7 +56,7 @@ StopReason execute_program(const Program& program, Env& env, const RunLimits& li
         }
         ++steps;
 
-        const Instruction& ins = program.code[static_cast<std::size_t>(pc)];
+        const auto& ins = program.code[static_cast<std::size_t>(pc)];
         const auto& o = ins.operands;
         ++pc;
 

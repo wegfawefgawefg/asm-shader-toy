@@ -14,7 +14,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(ast_core STATIC
     src/assembler.cpp
+    src/ir.cpp
     src/runtime.cpp
+    src/wgsl.cpp
 )
 add_library(ast::core ALIAS ast_core)
 

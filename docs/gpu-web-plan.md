@@ -17,6 +17,24 @@ asm source -> assembler -> validated IR -> CPU VM
 The CPU renderer remains the compatibility and debugging path. The GPU renderer
 is an accelerating backend for programs that fit the validated subset.
 
+## Current Implementation Status
+
+- A lowered IR boundary exists in `include/ast/ir.hpp` and `src/ir.cpp`.
+- The IR records source locations, operands, feature flags, and direct
+  successors for labels and branches.
+- The CPU runtime now lowers `Program` to `IrProgram` before execution, while the
+  opcode semantics remain shared through the same VM executor.
+- Frame rendering lowers once per frame, not once per pixel.
+- Core tests cover IR feature classification, invalid jump-target diagnostics,
+  and CPU parity between assembled programs and lowered IR.
+- Initial WGSL emission exists in `include/ast/wgsl.hpp` and `src/wgsl.cpp`.
+  It currently targets deterministic arithmetic, unary math, comparisons,
+  direct branches, bounded program-counter loops, `out`, `out8`, `ret`, and
+  `halt`.
+- The WGSL emitter returns diagnostics for unsupported ops instead of silently
+  falling back. Texture/media/channel metadata, live input query ops, calls,
+  native WebGPU execution, and the browser runner are still unimplemented.
+
 ## Why WGSL First
 
 - Browsers expose WebGPU/WGSL, not Vulkan/SPIR-V.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ast/assembler.hpp"
+#include "ast/ir.hpp"
 
 #include <array>
 #include <cstdint>
@@ -102,7 +103,10 @@ struct ChannelSet {
 using Registers = std::array<float, register_count>;
 
 Rgba run_pixel(const Program& program, const PixelInputs& inputs, const RunLimits& limits = {});
+Rgba run_pixel(const IrProgram& program, const PixelInputs& inputs, const RunLimits& limits = {});
 void render_frame(const Program& program, const FrameInputs& inputs,
+                  std::vector<std::uint32_t>& pixels, const RunLimits& limits = {});
+void render_frame(const IrProgram& program, const FrameInputs& inputs,
                   std::vector<std::uint32_t>& pixels, const RunLimits& limits = {});
 
 } // namespace ast
