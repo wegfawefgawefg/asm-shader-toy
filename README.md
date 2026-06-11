@@ -1,12 +1,26 @@
 # asm-shader-toy
 
-`asm-shader-toy` is a tiny Shadertoy-like experiment where the shader is a small
-assembly language run once per pixel on the CPU.
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="asm-shader-toy" width="720">
+</p>
 
-The first target is deliberately modest: GBA-resolution intermediate rendering
-at `240x160`, scaled up into a normal SDL window. The VM is scalar for now so
-the language and debugger surface can stay easy to understand before any SIMD,
-threaded, or GPU backend exists.
+`asm-shader-toy` is a tiny Shadertoy-like playground where the shader is a small
+assembly language run once per pixel on the CPU. It is meant to feel like a
+learnable fake machine: registers, labels, branches, subroutines, texture
+channels, feedback buffers, and a visible rendering harness.
+
+<p align="center">
+  <img src="docs/assets/example-collage.png" alt="collage of asm-shader-toy examples">
+</p>
+
+## Features
+
+- CPU VM renderer with a default GBA-size intermediate texture: `240x160`.
+- SDL2 window with nearest-neighbor scaling, hot reload, FPS overlay, pause, and reset.
+- Assembly language with labels, local labels, includes, aliases, constants, `.consts`, branches, calls, and bounded execution.
+- Shadertoy-style inputs for resolution, time, frame, date, mouse, keyboard, and gamepad.
+- Channels for PNG/JPEG images, streaming video, webcam, audio files, microphone, generated noise, and feedback buffers.
+- Headless `--dry-run`, `--no-graphics`, `--save-frame`, and `--measure-fps` modes for validation and profiling.
 
 ## Build
 
@@ -22,44 +36,55 @@ Validate every checked-in example without opening a window:
 
 ## Run
 
+Default demo:
+
 ```sh
 ./scripts/run.sh
 ```
 
-Or run a specific program:
+Specific examples:
 
 ```sh
-./build/asm-shader-toy examples/basics/plasma.asm --size 240x160 --dimscale 4
-./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --size gba --dimscale 4
+./build/asm-shader-toy examples/basics/plasma.asm --size gba --scale 4
+./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --size 253x316 --scale 2
+./build/asm-shader-toy examples/buffers/life_display.asm \
+  --buffer0 examples/buffers/life_buffer.asm \
+  --size gba \
+  --scale 4
 ```
 
-Show a small FPS overlay in the window:
+Graphical runs hot reload the active program and any `.include` dependencies on
+save. If a reload has assembly errors, diagnostics are printed and the last good
+program keeps running.
+
+Useful app controls:
+
+- `Ctrl+P`: pause/resume shader time and frame stepping.
+- `Ctrl+R`: reset shader time, frame count, and feedback buffers.
+- `Escape`: quit.
+
+Plain keys remain visible to shaders through `key`.
+
+## Channels
+
+Static images:
 
 ```sh
-./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --fps
+./build/asm-shader-toy examples/textures/multi_image_mix.asm \
+  --channel0 examples/assets/checker.png \
+  --channel1 examples/assets/bars.png
 ```
 
-Graphical runs hot reload the active program and any `.include` dependencies
-when they are saved. If a reload has assembly errors, diagnostics are printed
-and the last good program keeps running.
-
-Image inputs can be loaded into channels:
+Streaming video through local `ffmpeg`/`ffprobe`:
 
 ```sh
-./build/asm-shader-toy my.asm --channel0 image.png --channel1 mask.jpg
-```
-
-Video inputs can also be loaded into channels when `ffmpeg` and `ffprobe` are
-available:
-
-```sh
-./build/asm-shader-toy examples/video/video_channel.asm \
+./build/asm-shader-toy examples/video/poster_edges.asm \
   --video0 examples/assets/video/big_buck_bunny_4m34s_640x360.mp4 \
   --size 320x180 \
   --scale 2
 ```
 
-Webcam inputs can be loaded into channels on Linux through `ffmpeg`/V4L2:
+Webcam through local `ffmpeg`/V4L2:
 
 ```sh
 ./build/asm-shader-toy examples/webcam/webcam_channel.asm \
@@ -68,16 +93,76 @@ Webcam inputs can be loaded into channels on Linux through `ffmpeg`/V4L2:
   --scale 2
 ```
 
-Headless validation:
+Audio files and microphone channels:
+
+```sh
+./build/asm-shader-toy examples/audio/audio_scope.asm \
+  --audio0 examples/assets/audio/two_tone.wav \
+  --size 320x180 \
+  --scale 2
+
+./build/asm-shader-toy examples/microphone/mic_scope.asm \
+  --mic0 \
+  --size 320x180 \
+  --scale 2
+```
+
+Generated noise:
+
+```sh
+./build/asm-shader-toy examples/textures/noise_field.asm \
+  --noise0 42 \
+  --size gba \
+  --scale 4
+```
+
+## Headless
 
 ```sh
 ./build/asm-shader-toy examples/basics/plasma.asm --dry-run
 ./build/asm-shader-toy examples/basics/plasma.asm --no-graphics --frames 10
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm \
-  --size 506x632 \
+  --size 253x316 \
   --frames 90 \
   --save-frame /tmp/pixel_planet.png
 ./build/asm-shader-toy examples/raymarch/pixelated_planet.asm --measure-fps 120
+```
+
+## Language Snapshot
+
+Every pixel starts with fixed input registers:
+
+- `r0/r1`: pixel x/y
+- `r2`: shader time in seconds
+- `r3/r4`: render width/height
+- `r5..r9`: mouse position/button/click inputs
+- `r10`: frame
+- `r11`: time delta
+- `r12..r15`: local date inputs
+
+Built-in names like `px`, `py`, `time`, `width`, `height`, and `mouse_down`
+can be used instead of raw input registers. Scratch registers start at `r16`.
+Colors are written with `out` for normalized `0..1` channels or `out8` for byte
+`0..255` channels.
+
+Texture/channel instructions:
+
+```asm
+tex dr, dg, db, da, channel, u, v
+texel dr, dg, db, da, channel, x, y
+chdim dw, dh, channel
+chtime dst, channel
+chsrate dst, channel
+```
+
+Live input queries:
+
+```asm
+key dst, scancode
+mbtn dst, button
+mwheel dx, dy
+gbtn dst, button
+gaxis dst, axis
 ```
 
 Multi-file programs use `.include` with paths relative to the including file.
@@ -88,18 +173,18 @@ Includes are once-by-default after canonical path resolution:
 .include <std/screen.inc>
 ```
 
-See [examples/README.md](examples/README.md) for runnable examples covering
-time, mouse, image/video channels, buffers, multi-image mixing, includes, and a
-planet/sphere visual.
+`std/screen.inc` defines conventional scratch aliases such as `uv_x`, `uv_y`,
+`pos_x`, `pos_y`, `color_r`, `tex0_r`, `tex1_r`, and `tmp0`.
 
-Dedicated multi-file example:
+See [examples/README.md](examples/README.md), [docs/assembly.md](docs/assembly.md),
+[docs/inputs.md](docs/inputs.md), [docs/performance.md](docs/performance.md), and
+[docs/scope.md](docs/scope.md).
 
-```sh
-./build/asm-shader-toy examples/multifile/main.asm
-```
+## Size Presets
 
-`--scale` and `--dimscale` are aliases. The default `240x160` render uses scale
-`4`; passing `--size` uses scale `1` unless you also pass `--scale`/`--dimscale`.
+`--scale` and `--dimscale` are aliases. The default render uses scale `4`;
+passing `--size` uses scale `1` unless you also pass `--scale`.
+
 `--size` accepts `WxH` or a preset name:
 
 - `gb`, `gameboy`, `gbc`, `gameboycolor`: `160x144`
@@ -112,27 +197,5 @@ Dedicated multi-file example:
 - `ds`, `nds`: `256x192`
 - `psp`: `480x272`
 
-The interpreter always renders the intermediate texture size; SDL handles
-scaling that texture into the window.
-
-## Current Model
-
-Every pixel starts with these registers:
-
-- `r0`: pixel x
-- `r1`: pixel y
-- `r2`: time in seconds
-- `r3`: render width
-- `r4`: render height
-- `r5`: mouse x, reserved
-- `r6`: mouse y, reserved
-- `r7`: mouse down
-
-Registers `r8` through `r15` hold more frame inputs. Built-in names like `px`,
-`py`, `time`, `width`, `height`, and `mouse_down` can be used instead of raw
-input registers. Scratch registers start at `r16`. Colors are written with
-`out` for normalized `0..1` channels or `out8` for byte `0..255` channels.
-
-See [docs/scope.md](docs/scope.md), [docs/assembly.md](docs/assembly.md),
-[docs/inputs.md](docs/inputs.md), and
-[docs/language-roadmap.md](docs/language-roadmap.md).
+The interpreter always renders the intermediate texture size; SDL scales that
+texture into the window.
