@@ -11,8 +11,9 @@ development:
 This configures CMake with `AST_BUILD_NATIVE_WEBGPU=ON`, fetches a pinned
 `eliemichel/WebGPU-distribution` tag, links the `webgpu` CMake target, and copies
 the backend shared library next to the probe executable. The probe requests an
-adapter/device, dispatches a small WGSL compute shader, copies a storage buffer
-to a map-read buffer, and verifies the CPU readback values.
+adapter/device, dispatches a small handwritten WGSL compute shader, then
+assembles asm source, emits WGSL through the native compiler, runs that shader
+into an `rgba8unorm` storage texture, and verifies CPU readback pixels.
 
 The current default uses:
 

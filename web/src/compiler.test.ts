@@ -67,6 +67,8 @@ out r16, r21, r26, r19
     expect(result.wgsl).toContain("ast_channel_load");
     expect(result.wgsl).toContain("textureLoad(channel0_texture");
     expect(result.wgsl).toContain("chdim_meta");
+    expect(result.wgsl).toContain("let tex_channel_0 = 0;");
+    expect(result.wgsl).toContain("ast_channel_meta(0);");
   });
 
   test("compiles live input query ops", () => {

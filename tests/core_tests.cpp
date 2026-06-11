@@ -612,6 +612,10 @@ void test_wgsl_emits_texture_and_channel_metadata_subset() {
             "WGSL source declares channel metadata helper");
     require(wgsl.source.find("textureLoad(channel0_texture") != std::string::npos,
             "WGSL source samples channel textures");
+    require(wgsl.source.find("let tex_channel_0 = 0;") != std::string::npos,
+            "WGSL source emits immediate texture channels as integer literals");
+    require(wgsl.source.find("ast_channel_meta(0);") != std::string::npos,
+            "WGSL source emits immediate metadata channels as integer literals");
 }
 
 void test_wgsl_emits_live_input_subset() {

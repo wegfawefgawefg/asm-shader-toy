@@ -675,6 +675,10 @@ function readOperand(operand: Operand): string {
   return operand.kind === "register" ? `r[${operand.reg}]` : wgslFloat(operand.value);
 }
 
+function readI32Operand(operand: Operand): string {
+  return operand.kind === "register" ? `i32(${readOperand(operand)})` : String(Math.trunc(operand.value));
+}
+
 function writeRegister(operand: Operand, expression: string): string {
   return operand.kind === "register" ? `r[${operand.reg}] = ${expression};` : "";
 }
@@ -862,7 +866,7 @@ function emitInstruction(instruction: Instruction, pc: number, programSize: numb
     case "ret":
       return `${line}            if (call_depth > 0) { call_depth = call_depth - 1; pc = call_stack[call_depth]; } else { pc = ${programSize}; }\n`;
     case "tex":
-      return `${line}            let tex_channel_${pc} = i32(${readOperand(o[4])});
+      return `${line}            let tex_channel_${pc} = ${readI32Operand(o[4])};
             let tex_meta_${pc} = ast_channel_meta(tex_channel_${pc});
             if (tex_meta_${pc}.x <= 0.0 || tex_meta_${pc}.y <= 0.0) {
                 ${writeRegister(o[0], "0.0")} ${writeRegister(o[1], "0.0")} ${writeRegister(o[2], "0.0")} ${writeRegister(o[3], "0.0")}
@@ -876,7 +880,7 @@ function emitInstruction(instruction: Instruction, pc: number, programSize: numb
             }
             pc = ${next};\n`;
     case "texel":
-      return `${line}            let texel_channel_${pc} = i32(${readOperand(o[4])});
+      return `${line}            let texel_channel_${pc} = ${readI32Operand(o[4])};
             let texel_meta_${pc} = ast_channel_meta(texel_channel_${pc});
             let texel_x_${pc} = i32(round(${readOperand(o[5])}));
             let texel_y_${pc} = i32(round(${readOperand(o[6])}));
@@ -888,16 +892,16 @@ function emitInstruction(instruction: Instruction, pc: number, programSize: numb
             }
             pc = ${next};\n`;
     case "chdim":
-      return `${line}            let chdim_meta_${pc} = ast_channel_meta(i32(${readOperand(o[2])}));
+      return `${line}            let chdim_meta_${pc} = ast_channel_meta(${readI32Operand(o[2])});
             ${writeRegister(o[0], `chdim_meta_${pc}.x`)}
             ${writeRegister(o[1], `chdim_meta_${pc}.y`)}
             pc = ${next};\n`;
     case "chtime":
-      return `${line}            let chtime_meta_${pc} = ast_channel_meta(i32(${readOperand(o[1])}));
+      return `${line}            let chtime_meta_${pc} = ast_channel_meta(${readI32Operand(o[1])});
             ${writeRegister(o[0], `chtime_meta_${pc}.z`)}
             pc = ${next};\n`;
     case "chsrate":
-      return `${line}            let chsrate_meta_${pc} = ast_channel_meta(i32(${readOperand(o[1])}));
+      return `${line}            let chsrate_meta_${pc} = ast_channel_meta(${readI32Operand(o[1])});
             ${writeRegister(o[0], `chsrate_meta_${pc}.w`)}
             pc = ${next};\n`;
     case "key":

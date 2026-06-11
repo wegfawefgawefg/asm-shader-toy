@@ -175,6 +175,13 @@ std::string read_operand(const Operand& operand) {
     return wgsl_float(operand.value);
 }
 
+std::string read_i32_operand(const Operand& operand) {
+    if (operand.kind == OperandKind::Register) {
+        return "i32(" + read_operand(operand) + ")";
+    }
+    return std::to_string(static_cast<int>(operand.value));
+}
+
 std::string write_register(const Operand& operand, std::string_view expression) {
     return "r[" + std::to_string(operand.reg) + "] = " + std::string{expression} + ";";
 }
@@ -522,7 +529,7 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << "            pc = " << next_pc(pc) << ";\n";
         break;
     case Op::Tex:
-        out << "            let tex_channel_" << pc << " = i32(" << read_operand(o[4]) << ");\n"
+        out << "            let tex_channel_" << pc << " = " << read_i32_operand(o[4]) << ";\n"
             << "            let tex_meta_" << pc << " = ast_channel_meta(tex_channel_" << pc
             << ");\n"
             << "            if (tex_meta_" << pc << ".x <= 0.0 || tex_meta_" << pc
@@ -554,7 +561,7 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << "            pc = " << next_pc(pc) << ";\n";
         break;
     case Op::Texel:
-        out << "            let texel_channel_" << pc << " = i32(" << read_operand(o[4]) << ");\n"
+        out << "            let texel_channel_" << pc << " = " << read_i32_operand(o[4]) << ";\n"
             << "            let texel_meta_" << pc << " = ast_channel_meta(texel_channel_" << pc
             << ");\n"
             << "            let texel_x_" << pc << " = i32(round(" << read_operand(o[5]) << "));\n"
@@ -582,8 +589,8 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << "            pc = " << next_pc(pc) << ";\n";
         break;
     case Op::Chdim:
-        out << "            let chdim_meta_" << pc << " = ast_channel_meta(i32("
-            << read_operand(o[2]) << "));\n"
+        out << "            let chdim_meta_" << pc << " = ast_channel_meta("
+            << read_i32_operand(o[2]) << ");\n"
             << "            " << write_register(o[0], "chdim_meta_" + std::to_string(pc) + ".x")
             << '\n'
             << "            " << write_register(o[1], "chdim_meta_" + std::to_string(pc) + ".y")
@@ -591,15 +598,15 @@ void emit_instruction(std::ostringstream& out, const IrInstruction& instruction,
             << "            pc = " << next_pc(pc) << ";\n";
         break;
     case Op::Chtime:
-        out << "            let chtime_meta_" << pc << " = ast_channel_meta(i32("
-            << read_operand(o[1]) << "));\n"
+        out << "            let chtime_meta_" << pc << " = ast_channel_meta("
+            << read_i32_operand(o[1]) << ");\n"
             << "            " << write_register(o[0], "chtime_meta_" + std::to_string(pc) + ".z")
             << '\n'
             << "            pc = " << next_pc(pc) << ";\n";
         break;
     case Op::Chsrate:
-        out << "            let chsrate_meta_" << pc << " = ast_channel_meta(i32("
-            << read_operand(o[1]) << "));\n"
+        out << "            let chsrate_meta_" << pc << " = ast_channel_meta("
+            << read_i32_operand(o[1]) << ");\n"
             << "            " << write_register(o[0], "chsrate_meta_" + std::to_string(pc) + ".w")
             << '\n'
             << "            pc = " << next_pc(pc) << ";\n";

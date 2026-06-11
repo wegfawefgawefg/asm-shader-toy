@@ -133,7 +133,7 @@ if(AST_BUILD_NATIVE_WEBGPU)
     FetchContent_MakeAvailable(ast_webgpu_distribution)
 
     add_executable(ast-webgpu-probe src/native_webgpu_probe.cpp)
-    target_link_libraries(ast-webgpu-probe PRIVATE webgpu)
+    target_link_libraries(ast-webgpu-probe PRIVATE ast::core webgpu)
     target_compile_features(ast-webgpu-probe PRIVATE cxx_std_20)
     ast_apply_warnings(ast-webgpu-probe)
 
