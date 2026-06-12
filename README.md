@@ -5,17 +5,29 @@
 </p>
 
 `asm-shader-toy` is a tiny Shadertoy-like playground where the shader is a small
-assembly language run once per pixel on the CPU. It is meant to feel like a
-learnable fake machine: registers, labels, branches, subroutines, texture
-channels, feedback buffers, and a visible rendering harness.
+assembly language run once per pixel. It is meant to feel like a learnable
+machine: registers, labels, branches, subroutines, texture channels, feedback
+buffers, and a visible rendering harness.
 
 <p align="center">
   <img src="docs/assets/example-collage.png" alt="collage of asm-shader-toy examples">
 </p>
 
+Try the hosted browser app:
+
+https://wegfawefgawefg.github.io/asm-shader-toy/
+
+<p align="center">
+  <img src="docs/assets/screenshots/web-interface.png" alt="asm-shader-toy browser editor">
+</p>
+
 ## Features
 
-- CPU VM renderer with a default GBA-size intermediate texture: `240x160`.
+- Browser editor with WebGPU rendering, WebGL2 fallback, templates, share URLs,
+  PNG export, video recording, and live image/video/webcam/audio inputs.
+- Native C++ CPU VM renderer with a default GBA-size intermediate texture:
+  `240x160`.
+- Optional native WebGPU runner and frame tools for emitted WGSL.
 - SDL2 window with nearest-neighbor scaling, hot reload, FPS overlay, pause, and reset.
 - Assembly language with labels, local labels, includes, aliases, constants, `.consts`, branches, calls, and bounded execution.
 - Shadertoy-style inputs for resolution, time, frame, date, mouse, keyboard, and gamepad.
@@ -139,13 +151,14 @@ Graphical runs hot reload the active program and any `.include` dependencies on
 save. If a reload has assembly errors, diagnostics are printed and the last good
 program keeps running.
 
-## Browser Prototype
+## Browser App
 
-The `web/` app is the first WebGPU/browser slice. It has a multi-file project
-editor, prototype asm-to-WGSL compilation for the core language subset, a WGSL
-editor, import/export JSON, compressed share URLs, and a WebGPU preview canvas
-with nearest-neighbor scaling. The preview has pause, reset, FPS display, and
-PNG frame export controls. ASM and WGSL edits hot-compile after a short debounce.
+The `web/` app has a multi-file project editor, asm-to-WGSL compilation, a WGSL
+debug view, import/export JSON, compressed share URLs, and a GPU preview canvas
+with nearest-neighbor scaling. It prefers WebGPU and falls back to WebGL2 when
+WebGPU is unavailable. The preview has pause, reset, FPS display, PNG frame
+export, clipboard copy, and short video recording controls. ASM and WGSL edits
+hot-compile after a short debounce.
 
 Hosted build:
 
