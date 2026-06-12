@@ -6,13 +6,22 @@ Show HN: ASM Shader Toy, Shadertoy but with a tiny assembly language
 
 ## Short Link Text
 
-I made this because a friend was learning assembly and the normal beginner stuff felt boring. Printing numbers, moving bytes around, watching registers change in a terminal. Useful, sure, but not exactly the kind of thing that makes you want to keep poking at it.
+My bud was learning assembly but the normal material was pretty boring but I know he wanted to learn shaders so I combined the two into 
+something pretty terrible. It has all the same complexity of normal raymarching, sdf defining, space coordinate warping, except now 
+you dont get variables or functions. 
 
-So I made a small Shadertoy-like playground where the shader is fake assembly. It runs once per pixel. You get registers, labels, branches, subroutines, includes, constants, textures, webcam/video/audio inputs, and feedback buffers. The default resolution is tiny retro stuff like Game Boy or GBA, then it scales up with nearest-neighbor pixels.
+At first it was just a cpp demo with vm that run per pixel. That was slow, but threading it made it plenty fast for whatever peak compute
+you might need for a shader written in asm. Then I (gpt) added inputs to match shader toy, buffers for feedback and memory, and various inputs, mouse, kb, mic, webcam, etc. After that i looked over the examples and... found them pretty bland. The asm was missing things needed to make it more of an asm and less of a riscv'ish LHA form. So we add features: registers, labels, branches, subr, includes, consts, etc. 
 
-The desktop version started as a CPU VM in C++. That made it easy to understand and debug, but it was obviously not going to be fast forever. The browser version now compiles the assembly to WGSL for WebGPU, with a WebGL2 fallback so Firefox can still run it. That fallback took a little debugging because WGSL switch cases do not fall through and GLSL switch cases do. That one was fun.
+Theres a clever two eval pass for consts that is inspired by lisp, where the consts are just the same asm but with a different env. I did it 
+like that because I looked at real asm const DSL's and they look impure to me and violate the intention of the project. 
+Its sort of like comptime if you know what that is and dont know lisp. (What are you retarded?)
 
-It is not meant to be a real ISA. It is a toy machine with enough assembly flavor to teach the useful ideas: registers, control flow, memory-ish inputs, bounded execution, and how tiny instructions add up to an image.
+I know asm's have lots of funny macro ideas that can make them like pseudo real languages, but I just left that out because at that point 
+why not write a little scheme that targets this "ST-ASM" as an IR, and then a tabbed pseudo python with swizzling that lowers to that.
+Ill probably do that next for fun.
+
+To share it it had to be on web, and cpu vm per pixel wasnt gonna cut it in js. So the browser version now compiles the assembly to WGSL for WebGPU, with a WebGL2 fallback so Firefox can still run it. (Took longer to get that working than the entire rest of the project, but if it cant run on the top browsers then it can't be shown off...) 
 
 Some fun examples:
 
@@ -31,15 +40,16 @@ Repo:
 
 https://github.com/wegfawefgawefg/asm-shader-toy
 
-## Possible Comment
+## QA
 
-I am still sanding this down, but it is already pretty fun to mess with. The language is intentionally fake and small. I wanted something closer to "learn control flow by making pixels move" than "learn assembly by writing another calculator."
+-   Q: It runs like dogshit on my machine"
+    A: It probably is running in cpu fallback mode bc ur browser doesnt have some runtime flag on. 
 
-The CPU runner is still there because it is useful as the reference implementation. The browser path compiles to GPU shaders because otherwise the fun examples get too slow.
+-   Q: "Does this have anything to do with WebAssembly? Why not WebAssembly?"
+    A: "Uh its mainly supposed to emit shader code and run on gpu so, didnt really wanna do ffi to wasm for just the cpu fallback. but you could?"
 
-## Notes Before Posting
+-   Q: "Is this real assembly?"
+    A: "Are you made of real meat?"
 
+## Note to self
 - Pick a share URL that opens a good default example. `plasma` is safe, `pixelated_planet` is more impressive but heavier.
-- Make sure Firefox shows `WebGL2 ready (fallback)` and Chrome shows either `WebGPU ready` or `WebGL2 ready`.
-- Be ready to answer "is this real assembly?" with: no, it is a small teaching assembly with registers and branches, designed for pixels.
-- Be ready to answer "why not WebAssembly?" with: the point is not to run existing assembly, it is to make a tiny visible machine you can learn by editing.
